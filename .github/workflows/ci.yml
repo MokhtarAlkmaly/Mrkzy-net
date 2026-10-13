@@ -1,0 +1,46 @@
+name: فحص جودة الكود (lint + أنواع + اختبارات أوفلاين + بناء الويب)
+
+# النسخة الأوفلاين: لا خادم ولا أسرار — الفحوص كلها محلية.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: سحب المشروع
+        uses: actions/checkout@v7
+
+      - name: تثبيت Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: تثبيت حزم المشروع
+        run: npm ci
+
+      - name: فحص ESLint
+        run: npm run lint
+
+      - name: فحص أنواع TypeScript
+        run: npm run typecheck
+
+      - name: اختبارات قاعدة البيانات المجلدية والمستخدمين المحليين
+        run: npm run test:offline
+
+      - name: اختبارات التواريخ (توقيت اليمن)
+        run: npm run test:dates
+
+      - name: فحوص الترويسة الموحّدة
+        run: npm run test:header
+
+      - name: بناء الويب
+        run: npm run build

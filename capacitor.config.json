@@ -1,0 +1,12 @@
+{
+  "appId": "org.inmaa.mrkzy.offline",
+  "appName": "مركزي أوفلاين — مركز إنماء",
+  "webDir": ".output/public",
+  "plugins": {
+    "CapacitorSQLite": {
+      "androidIsEncryption": false,
+      "iosIsEncryption": false,
+      "iosDatabaseLocation": "Library/CapacitorDatabase"
+    }
+  }
+}
