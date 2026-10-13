@@ -205,7 +205,7 @@ export function AppSidebar() {
         <div className="flex items-center gap-2 px-2 py-1">
           <img src={logo} alt="الشعار" className="h-8 w-8 rounded-md object-contain" />
           <span className="text-sm font-bold group-data-[collapsible=icon]:hidden">
-            إنماء الأهلي الخيري
+            التوفق لتحفيظ القرآن الكريم
           </span>
         </div>
       </SidebarHeader>

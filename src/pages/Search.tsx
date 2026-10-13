@@ -293,7 +293,7 @@ const Search = () => {
       <div class="head">
         <img src="${logo}" class="logo" />
         <div>
-          <h1>مركز إنماء الأهلي الخيري</h1>
+          <h1>مركز التوفق لتحفيظ القرآن الكريم</h1>
           <div class="sub">سجل الطالب/الطالبة الشامل خلال جميع الأعوام</div>
         </div>
       </div>

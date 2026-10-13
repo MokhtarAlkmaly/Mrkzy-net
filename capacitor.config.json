@@ -1,6 +1,6 @@
 {
-  "appId": "org.inmaa.mrkzy.offline",
-  "appName": "مركزي أوفلاين — مركز إنماء",
+  "appId": "org.tawfuq.mrkzy.offline",
+  "appName": "مركزي أوفلاين — مركز التوفق",
   "webDir": ".output/public",
   "plugins": {
     "CapacitorSQLite": {

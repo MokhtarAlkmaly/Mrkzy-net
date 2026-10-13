@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import Install from "@/pages/Install";
 
-const title = "تثبيت التطبيق - مركز إنماء الأهلي الخيري";
+const title = "تثبيت التطبيق - مركز التوفق لتحفيظ القرآن الكريم";
 const description = "خطوات تثبيت تطبيق المسابقة الرمضانية على الجوال والحاسب.";
 
 export const Route = createFileRoute("/install")({

@@ -4,7 +4,7 @@ import Settings from "@/pages/Settings";
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({
     meta: [
-      { title: "الإعدادات - مركز إنماء الأهلي الخيري" },
+      { title: "الإعدادات - مركز التوفق لتحفيظ القرآن الكريم" },
       {
         name: "description",
         content: "إعدادات عامة للنظام: العام النشط، اسم المركز، والتوقيعات الافتراضية.",

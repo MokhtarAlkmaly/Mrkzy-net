@@ -16,7 +16,7 @@ import type {
   SQLiteDBConnection,
 } from "@capacitor-community/sqlite";
 
-export const DB_NAME = "inmaa_local";
+export const DB_NAME = "tawfuq_local";
 const DB_VERSION = 1;
 
 // ========== إنشاء الجداول (سكيمة حقيقية بأعمدة نموذجية، وليست JSON مبهم) ==========

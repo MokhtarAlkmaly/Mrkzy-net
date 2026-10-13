@@ -214,7 +214,7 @@ const Certificates = () => {
     <div class="cert">
       <div class="frame">
         <img class="logo" src="${new URL(logo, window.location.origin).href}" alt="" />
-        <div class="kicker">مركز إنماء الأهلي الخيري</div>
+        <div class="kicker">مركز التوفق لتحفيظ القرآن الكريم</div>
         <div class="title">${esc(c.title || CERT_TYPES[c.cert_type] || "شهادة")}</div>
         <div class="rule"></div>
         <div class="pre">تُمنح هذه الشهادة إلى</div>

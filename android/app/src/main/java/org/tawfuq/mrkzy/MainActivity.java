@@ -1,4 +1,4 @@
-package org.inmaa.msabkarmdan;
+package org.tawfuq.mrkzy;
 
 import com.getcapacitor.BridgeActivity;
 

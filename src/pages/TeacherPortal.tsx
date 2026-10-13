@@ -371,11 +371,11 @@ const TeacherPortal = () => {
       {/* الترويسة */}
       <header className="border-b border-white/10 bg-emerald-950/60 px-4 py-4">
         <div className="mx-auto flex max-w-2xl items-center gap-3">
-          <LogoBadge size="sm" goldRing alt="مركز إنماء الأهلي الخيري" />
+          <LogoBadge size="sm" goldRing alt="مركز التوفق لتحفيظ القرآن الكريم" />
           <div className="min-w-0 flex-1">
             <p className="flex items-center gap-1.5 text-[11px] font-bold text-amber-300">
               <Link2 className="h-3 w-3" />
-              بوابة المعلم/ة · مركز إنماء الأهلي الخيري
+              بوابة المعلم/ة · مركز التوفق لتحفيظ القرآن الكريم
             </p>
             <h1 className="truncate text-lg font-black text-white">
               متابعة {monthLabel} · {yearLabel}
@@ -414,7 +414,7 @@ const TeacherPortal = () => {
         ))}
 
         <p className="pt-2 text-center text-[10px] text-white/30">
-          مركز إنماء الأهلي الخيري · قسم القرآن الكريم
+          مركز التوفق لتحفيظ القرآن الكريم · قسم القرآن الكريم
         </p>
       </main>
     </div>

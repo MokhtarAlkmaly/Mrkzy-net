@@ -501,7 +501,7 @@ const Index = () => {
               <LogoBadge
                 size="lg"
                 goldRing
-                alt="مركز إنماء الأهلي الخيري"
+                alt="مركز التوفق لتحفيظ القرآن الكريم"
                 className="print:h-16 print:w-16"
               />
               <div>
@@ -516,7 +516,7 @@ const Index = () => {
                   كشف {competitionLabel}
                 </h1>
                 <p className="mt-1 text-sm text-white/75 sm:text-base">
-                  مركز إنماء الأهلي الخيري · الإشراف - شرعب الرونة
+                  مركز التوفق لتحفيظ القرآن الكريم
                 </p>
               </div>
             </div>

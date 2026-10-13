@@ -145,7 +145,7 @@ export const StudentReport = ({ student }: Props) => {
       </style></head><body>
         <div class="header">
           <img src="${logo}" alt="الشعار" />
-          <h1>مركز إنماء الأهلي الخيري</h1>
+          <h1>مركز التوفق لتحفيظ القرآن الكريم</h1>
           <h2>تقرير المسابقة الرمضانية - ${esc(student.name)}</h2>
         </div>
         <div class="student-info">
@@ -221,7 +221,7 @@ export const StudentReport = ({ student }: Props) => {
             <div ref={reportRef}>
               <div className="header">
                 <img src={logo} alt="الشعار" />
-                <h1>مركز إنماء الأهلي الخيري</h1>
+                <h1>مركز التوفق لتحفيظ القرآن الكريم</h1>
                 <h2>تقرير المسابقة الرمضانية - {student.name}</h2>
               </div>
               <div className="student-info">

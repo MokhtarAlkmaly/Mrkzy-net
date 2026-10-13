@@ -4,7 +4,7 @@ import ExternalCompetition from "@/pages/ExternalCompetition";
 export const Route = createFileRoute("/_authenticated/external-competition")({
   head: () => ({
     meta: [
-      { title: "المسابقة الخارجية - مركز إنماء الأهلي الخيري" },
+      { title: "المسابقة الخارجية - مركز التوفق لتحفيظ القرآن الكريم" },
       { name: "description", content: "تسجيل نتائج المسابقات الخارجية للطلاب والطالبات." },
     ],
   }),

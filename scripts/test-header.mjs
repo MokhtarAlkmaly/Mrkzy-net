@@ -73,7 +73,7 @@ try {
     }),
   );
 
-  check("اسم المركز ظاهر في الترويسة", html.includes("مركز إنماء الأهلي الخيري"));
+  check("اسم المركز ظاهر في الترويسة", html.includes("مركز التوفق لتحفيظ القرآن الكريم"));
   check(
     "اسم المركز بحجم كبير وسائل يتدرّج مع كل الشاشات (h1 مع clamp)",
     /<h1[^>]*text-\[clamp\([^)]*vw[^)]*\)\]/.test(html) && /<h1[^>]*font-black/.test(html),
@@ -170,7 +170,7 @@ try {
   const indexSrc = readFileSync(join(root, "src/pages/Index.tsx"), "utf8");
   check(
     "صفحة كشف المسابقة تعرض اسم المركز وقسم القرآن الكريم وتاريخ اليوم بتوقيت اليمن",
-    indexSrc.includes("مركز إنماء الأهلي الخيري") &&
+    indexSrc.includes("مركز التوفق لتحفيظ القرآن الكريم") &&
       indexSrc.includes("QURAN_DEPARTMENT_NAME") &&
       indexSrc.includes("useArabicDates"),
   );

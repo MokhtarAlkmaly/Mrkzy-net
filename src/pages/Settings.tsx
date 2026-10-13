@@ -428,7 +428,7 @@ const Settings = () => {
                   value={centerName}
                   onChange={(e) => setCenterName(e.target.value)}
                   disabled={readOnly}
-                  placeholder="مركز إنماء الأهلي الخيري"
+                  placeholder="مركز التوفق لتحفيظ القرآن الكريم"
                 />
               </div>
 

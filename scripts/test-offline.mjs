@@ -1,6 +1,7 @@
 const store = new Map();
 globalThis.window = globalThis;
 globalThis.addEventListener = () => {};
+globalThis.removeEventListener = () => {};
 globalThis.localStorage = {
   getItem: (k) => (store.has(k) ? store.get(k) : null),
   setItem: (k, v) => store.set(k, String(v)),

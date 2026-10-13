@@ -357,7 +357,7 @@ export const CompetitionTable = ({
       </style></head><body>
         <div class="header">
           <img src="${logo}" alt="الشعار" />
-          <h1>مركز إنماء الأهلي الخيري</h1>
+          <h1>مركز التوفق لتحفيظ القرآن الكريم</h1>
           <h2>كشف ${competitionLabel} - ${currentYear}هـ</h2>
         </div>
         <div class="filter-info"><strong>التصفية:</strong> ${getFilterDescription()}</div>

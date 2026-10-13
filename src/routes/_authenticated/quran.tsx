@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import Home from "@/pages/Home";
 
-const title = "قسم القرآن الكريم - مركز إنماء";
+const title = "قسم القرآن الكريم - مركز التوفق";
 const description =
   "الصفحة الرئيسية لقسم القرآن الكريم: الطلاب، المعلمين، المتابعة الشهرية، والمسابقات.";
 

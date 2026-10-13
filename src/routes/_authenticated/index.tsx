@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import DepartmentSelect from "@/pages/DepartmentSelect";
 
-const title = "اختر القسم - مركز إنماء الأهلي الخيري";
+const title = "اختر القسم - مركز التوفق لتحفيظ القرآن الكريم";
 const description = "اختر القسم الذي تريد إدارته: قسم القرآن الكريم أو قسم التدريب والتأهيل.";
 
 export const Route = createFileRoute("/_authenticated/")({

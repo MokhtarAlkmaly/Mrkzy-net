@@ -1,10 +1,10 @@
 /**
  * قاعدة البيانات المجلدية (Folder Database) — قلب النسخة الأوفلاين.
  *
- * الفكرة: قاعدة البيانات كلها مجلد واحد اسمه `MrkzyDatabase` على ذاكرة
+ * الفكرة: قاعدة البيانات كلها مجلد واحد اسمه `TawfuqDatabase` على ذاكرة
  * الهاتف، وداخله ملف JSON واحد لكل جدول:
  *
- *   MrkzyDatabase/
+ *   TawfuqDatabase/
  *     mrkzy-db.json        ← بيان القاعدة (الإصدار، آخر تحديث، عدد الصفوف)
  *     students.json        ← { table, updatedAt, rows: [...] }
  *     teachers.json
@@ -21,8 +21,8 @@
  *
  * مكان المجلد (يختاره المستخدم من الإعدادات):
  *  - "documents" (افتراضي): مجلد المستندات — ظاهر في تطبيق «الملفات»
- *    تحت Documents/MrkzyDatabase ويمكن نسخه بالكابل أو البلوتوث.
- *  - "external": جذر الذاكرة الخارجية/الداخلية المشتركة MrkzyDatabase
+ *    تحت Documents/TawfuqDatabase ويمكن نسخه بالكابل أو البلوتوث.
+ *  - "external": جذر الذاكرة الخارجية/الداخلية المشتركة TawfuqDatabase
  *    مباشرة (قد يحتاج إذن تخزين في بعض الأجهزة).
  *  - "data": ذاكرة التطبيق الخاصة (لا تظهر في الملفات، تُحذف بإلغاء التثبيت).
  *
@@ -30,7 +30,7 @@
  * بنفس الصيغة، لأن المتصفح لا يستطيع الكتابة في مجلد حقيقي دون إذن.
  */
 
-export const DB_FOLDER = "MrkzyDatabase";
+export const DB_FOLDER = "TawfuqDatabase";
 export const DB_MANIFEST = "mrkzy-db.json";
 const DB_VERSION = 1;
 
@@ -38,7 +38,7 @@ export type FolderLocation = "documents" | "external" | "data";
 
 export const FOLDER_LOCATION_LABELS: Record<FolderLocation, string> = {
   documents: "مجلد المستندات (ظاهر في تطبيق الملفات)",
-  external: "الذاكرة الخارجية / جذر التخزين (MrkzyDatabase مباشرة)",
+  external: "الذاكرة الخارجية / جذر التخزين (TawfuqDatabase مباشرة)",
   data: "ذاكرة التطبيق الخاصة (مخفية)",
 };
 

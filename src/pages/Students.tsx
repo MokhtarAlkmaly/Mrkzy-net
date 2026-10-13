@@ -404,7 +404,7 @@ const Students = () => {
         <body>
           <div class="header">
             <img src="${logo}" alt="الشعار" />
-            <h1>مركز إنماء الأهلي الخيري — السجل الرسمي للطلاب والطالبات</h1>
+            <h1>مركز التوفق لتحفيظ القرآن الكريم — السجل الرسمي للطلاب والطالبات</h1>
             <p>${printDateLine} | جميع الأعوام</p>
             <p>إجمالي السجلات: ${filtered.length} | مجموع الأجزاء: ${summaryStats.totalParts} | متوسط الدرجات: ${summaryStats.avgScore}</p>
           </div>
