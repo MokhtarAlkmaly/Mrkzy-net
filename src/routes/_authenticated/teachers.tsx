@@ -4,14 +4,14 @@ import Teachers from "@/pages/Teachers";
 export const Route = createFileRoute("/_authenticated/teachers")({
   head: () => ({
     meta: [
-      { title: "المعلمون والمعلمات والإكراميات - مركز إنماء الأهلي الخيري" },
+      { title: "المعلمون والمعلمات والإكراميات - مركز التوفق لتحفيظ القرآن الكريم" },
       {
         name: "description",
         content: "إدارة المعلمين والمعلمات وإكرامياتهم الشهرية في المسابقة الرمضانية.",
       },
       {
         property: "og:title",
-        content: "المعلمون والمعلمات والإكراميات - مركز إنماء الأهلي الخيري",
+        content: "المعلمون والمعلمات والإكراميات - مركز التوفق لتحفيظ القرآن الكريم",
       },
       {
         property: "og:description",

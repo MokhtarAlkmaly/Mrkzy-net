@@ -32,7 +32,7 @@ const questionItem = (q: PaperQuestion) => `
 /** ورقة نموذج كاملة: ترويسة + بيانات الطالب + الأسئلة */
 export const buildPaperHtml = (paper: ExamPaper, year: string): string => `
     <div class="paper">
-      <div class="center">مركز إنماء الأهلي الخيري — قسم القرآن الكريم</div>
+      <div class="center">مركز التوفق لتحفيظ القرآن الكريم — قسم القرآن الكريم</div>
       <h2 style="border:0;text-align:center;margin:4px 0">اختبار حفظ القرآن الكريم</h2>
       <div class="meta">
         العام ${esc(year)}هـ — فئة الحفظ: ${esc(paper.categoryLabel)} (${esc(paper.rangeLabel)})
@@ -49,7 +49,7 @@ export const buildPaperHtml = (paper: ExamPaper, year: string): string => `
       <ol class="qs">
         ${paper.questions.map(questionItem).join("")}
       </ol>
-      <div class="thanks">وفّقكم الله — إدارة مركز إنماء الأهلي الخيري</div>
+      <div class="thanks">وفّقكم الله — إدارة مركز التوفق لتحفيظ القرآن الكريم</div>
     </div>`;
 
 /** كل النماذج في مستند واحد، كل نموذج في صفحة مستقلة */
@@ -59,7 +59,7 @@ export const buildPapersHtml = (papers: ExamPaper[], year: string): string =>
 /** مفتاح التصحيح: مرجع كل سؤال (السورة والآيات والجزء والصفحة وطول المقطع) */
 export const buildAnswerKeyHtml = (papers: ExamPaper[], year: string): string => `
     <div class="paper">
-      <div class="center">مركز إنماء الأهلي الخيري — قسم القرآن الكريم</div>
+      <div class="center">مركز التوفق لتحفيظ القرآن الكريم — قسم القرآن الكريم</div>
       <h2 style="border:0;text-align:center;margin:4px 0">مفتاح تصحيح أسئلة الحفظ</h2>
       <div class="meta">العام ${esc(year)}هـ — فئة الحفظ: ${esc(papers[0]?.categoryLabel ?? "")} — ${papers.length} نماذج</div>
       <table>

@@ -350,7 +350,7 @@ const Auth = () => {
           <div className="relative z-10">
             <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-amber-200 ring-1 ring-white/15">
               <Sparkles className="h-3.5 w-3.5" />
-              مركز إنماء الأهلي الخيري
+              مركز التوفق لتحفيظ القرآن الكريم
             </div>
             <h2 className="mt-5 text-3xl font-black leading-relaxed text-white">
               دخول آمن، صلاحيات واضحة، وبيانات محفوظة لكل مستخدم.
@@ -377,10 +377,10 @@ const Auth = () => {
         {/* نموذج الدخول */}
         <div className="p-6 sm:p-8">
           <div className="flex flex-col items-center gap-3 text-center">
-            <LogoBadge size="xl" goldRing alt="شعار مركز إنماء الأهلي الخيري" />
+            <LogoBadge size="xl" goldRing alt="شعار مركز التوفق لتحفيظ القرآن الكريم" />
             <div>
               <h1 className="text-xl font-black text-primary sm:text-2xl">
-                مركز إنماء الأهلي الخيري
+                مركز التوفق لتحفيظ القرآن الكريم
               </h1>
               <p className="mt-1 text-base font-bold text-foreground">{title}</p>
               <p className="mt-1 text-xs leading-6 text-muted-foreground">{description}</p>

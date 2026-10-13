@@ -178,7 +178,7 @@ const Reports = () => {
       <div class="head" style="display:flex;align-items:center;gap:12px;justify-content:center">
         <img src="${logo}" style="height:60px" />
         <div>
-          <h1>مركز إنماء الأهلي الخيري</h1>
+          <h1>مركز التوفق لتحفيظ القرآن الكريم</h1>
           <div class="sub">التقرير الشامل للطالب/طالبة</div>
         </div>
       </div>

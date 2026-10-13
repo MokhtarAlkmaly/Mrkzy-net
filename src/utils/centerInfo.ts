@@ -4,7 +4,7 @@
  */
 
 /** اسم المركز الرسمي كما يظهر في الترويسة الموحّدة */
-export const CENTER_NAME = "مركز إنماء الأهلي الخيري";
+export const CENTER_NAME = "مركز التوفق لتحفيظ القرآن الكريم";
 
 /** اسم قسم القرآن الكريم */
 export const QURAN_DEPARTMENT_NAME = "قسم القرآن الكريم";

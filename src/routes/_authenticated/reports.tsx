@@ -4,7 +4,7 @@ import Reports from "@/pages/Reports";
 export const Route = createFileRoute("/_authenticated/reports")({
   head: () => ({
     meta: [
-      { title: "التقارير - مركز إنماء الأهلي الخيري" },
+      { title: "التقارير - مركز التوفق لتحفيظ القرآن الكريم" },
       {
         name: "description",
         content:

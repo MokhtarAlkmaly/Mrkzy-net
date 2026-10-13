@@ -12,13 +12,13 @@ function MonthlySearchPage() {
 export const Route = createFileRoute("/monthly-search")({
   head: () => ({
     meta: [
-      { title: "بحث المتابعة الشهرية - مركز إنماء الأهلي الخيري" },
+      { title: "بحث المتابعة الشهرية - مركز التوفق لتحفيظ القرآن الكريم" },
       {
         name: "description",
         content:
           "سجل المتابعة الشهرية الكامل للطالب/طالبة خلال أشهر العام، بمقارنة نسب التقدم بالحفظ والمراجعة، قابل للطباعة والمشاركة.",
       },
-      { property: "og:title", content: "بحث المتابعة الشهرية - مركز إنماء الأهلي الخيري" },
+      { property: "og:title", content: "بحث المتابعة الشهرية - مركز التوفق لتحفيظ القرآن الكريم" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],

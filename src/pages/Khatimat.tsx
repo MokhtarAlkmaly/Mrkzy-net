@@ -38,7 +38,7 @@ const Khatimat = () => {
     <div class="head">
       <img src="${logo}" class="logo" />
       <div>
-        <h1>مركز إنماء الأهلي الخيري</h1>
+        <h1>مركز التوفق لتحفيظ القرآن الكريم</h1>
         <div class="sub">كشف الخاتمين والخاتمات — إجمالي ${entries.length} طالب/طالبة</div>
       </div>
     </div>

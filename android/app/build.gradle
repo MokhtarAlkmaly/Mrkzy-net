@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "org.inmaa.msabkarmdan"
+    namespace = "org.tawfuq.mrkzy"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "org.inmaa.msabkarmdan"
+        applicationId "org.tawfuq.mrkzy.offline"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

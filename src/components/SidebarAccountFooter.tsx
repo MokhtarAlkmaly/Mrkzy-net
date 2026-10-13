@@ -34,7 +34,7 @@ export function SidebarAccountFooter() {
   const displayName = getDisplayName(user?.user_metadata, user?.email);
   const initial = displayName.trim().charAt(0) || "؟";
   const statusLabel = "محلي — أوفلاين";
-  const statusHint = "كل البيانات تُحفظ فوراً في مجلد MrkzyDatabase على هذا الجهاز";
+  const statusHint = "كل البيانات تُحفظ فوراً في مجلد TawfuqDatabase على هذا الجهاز";
 
   const handleSignOut = async () => {
     setSigningOut(true);
