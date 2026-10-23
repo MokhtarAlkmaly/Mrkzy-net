@@ -1,4 +1,4 @@
-package org.inmaa.msabkarmdan;
+package org.inmaa.mrkzy.offline;
 
 import com.getcapacitor.BridgeActivity;
 
