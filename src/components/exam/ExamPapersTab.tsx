@@ -10,16 +10,26 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
-import type { Database } from "@/integrations/supabase/types";
-import { printHtml } from "@/utils/report";
+import { buildPrintDocument, printHtml } from "@/utils/report";
+import { exportHtmlAsPdf, printHtmlDocument } from "@/utils/nativePrint";
+import { examQuestionErrorMessage, saveExamQuestions } from "@/utils/examStorage";
+import { normalizeQuestionText, type ExamQuestionInput } from "@/lib/exam-questions";
+import {
+  ATTENDANCE_MARKS,
+  BEHAVIOR_MARKS,
+  HIFZ_TOTAL_MARKS,
+  PAPER_TOTAL_MARKS,
+  QUESTIONS_TOTAL_MARKS,
+  RECITATION_TOTAL_MARKS,
+  TEACHER_TOTAL_MARKS,
+} from "@/lib/exam-marks";
 import {
   PAPER_CSS,
   buildAnswerKeyHtml,
   buildPaperHtml,
   buildPapersHtml,
 } from "@/utils/examPaperPrint";
-import { BookOpen, Loader2, Printer, Save, Sparkles, Wand2 } from "lucide-react";
+import { BookOpen, FileDown, Loader2, Printer, Save, Sparkles, Wand2 } from "lucide-react";
 import { loadQuranData, type QuranData } from "@/utils/quranText";
 import {
   HIFZ_CATEGORIES,
@@ -35,24 +45,26 @@ import {
   resolveJuzRange,
 } from "@/utils/examPaperGenerator";
 
-const SAVE_MODEL_NOTE = "توليد تلقائي من المصحف";
+/** إعدادات حجم الورق: A5 أفقي */
+const PAPER_PDF_FORMAT = "a5";
+const PAPER_PDF_ORIENTATION = "landscape";
 
-/** صف إدراج في جدول أسئلة الاختبارات */
-type QuestionInsert = Database["public"]["Tables"]["exam_questions"]["Insert"];
+const SAVE_MODEL_NOTE = "توليد تلقائي من المصحف";
 
 /**
  * تبويب «نماذج الاختبار»: توليد أسئلة الحفظ من المصحف حسب فئة الحفظ،
  * بعدة نماذج (أ، ب، ج…) بمواضع مختلفة، مع الطباعة أو الحفظ في البنك.
  */
 const ExamPapersTab = ({ year }: { year: string }) => {
-  const { user } = useAuth();
+  const { user, viewAs } = useAuth();
   const { toast } = useToast();
   const [categoryId, setCategoryId] = useState(HIFZ_CATEGORIES[0].id);
   const [direction, setDirection] = useState<RangeDirection>("end");
-  const [modelsCount, setModelsCount] = useState(3);
+  const [modelsCount, setModelsCount] = useState(25);
   const [papers, setPapers] = useState<ExamPaper[]>([]);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [pdfKey, setPdfKey] = useState<string | null>(null);
   const [dataError, setDataError] = useState("");
 
   const category = useMemo(() => getCategory(categoryId), [categoryId]);
@@ -88,68 +100,129 @@ const ExamPapersTab = ({ year }: { year: string }) => {
   };
 
   const printPaper = (paper: ExamPaper) => {
-    void printHtml(`نموذج_${paper.label}_${year}`, buildPaperHtml(paper, year), PAPER_CSS);
+    void printHtml(
+      `نموذج_${paper.label}_${year}`,
+      buildPaperHtml(paper, year),
+      PAPER_CSS,
+      PAPER_PDF_FORMAT,
+      PAPER_PDF_ORIENTATION,
+    );
   };
 
   const printAll = () => {
-    void printHtml(`نماذج_الاختبار_${year}`, buildPapersHtml(papers, year), PAPER_CSS);
+    void printHtml(
+      `نماذج_الاختبار_${year}`,
+      buildPapersHtml(papers, year),
+      PAPER_CSS,
+      PAPER_PDF_FORMAT,
+      PAPER_PDF_ORIENTATION,
+    );
   };
 
   const printAnswerKey = () => {
-    void printHtml(`مفتاح_التصحيح_${year}`, buildAnswerKeyHtml(papers, year), PAPER_CSS);
+    void printHtml(
+      `مفتاح_التصحيح_${year}`,
+      buildAnswerKeyHtml(papers, year),
+      PAPER_CSS,
+      PAPER_PDF_FORMAT,
+      PAPER_PDF_ORIENTATION,
+    );
   };
 
-  /** حفظ أسئلة النماذج في بنك الأسئلة (مع تجاهل المكرر) */
+  /**
+   * تنزيل PDF جاهز للطباعة — مسار لا يعتمد على نافذة الطباعة ولا على مانع
+   * النوافذ المنبثقة، فيبقى متاحاً أينما تعذّرت الطباعة المباشرة.
+   */
+  const downloadPdf = async (key: string, fileName: string, body: string) => {
+    setPdfKey(key);
+    try {
+      await exportHtmlAsPdf(
+        buildPrintDocument(fileName, body, PAPER_CSS),
+        fileName,
+        PAPER_PDF_FORMAT,
+        PAPER_PDF_ORIENTATION,
+      );
+    } finally {
+      setPdfKey(null);
+    }
+  };
+
+  const downloadingAll = pdfKey === "all";
+  const downloadingKey = pdfKey === "key";
+
+  /**
+   * حفظ أسئلة النماذج في بنك الأسئلة (مع تجاهل المكرر).
+   *
+   * تُكتب الأسئلة مباشرة داخل MrkzyDatabase، ويكشف التكرار محلياً قبل
+   * الحفظ؛ فتعمل العملية كلها دون إنترنت.
+   */
   const saveToBank = async (list: ExamPaper[]) => {
-    if (!user || list.length === 0) return;
+    if (!user || viewAs || list.length === 0) return;
     setSaving(true);
     try {
-      const { data: existing, error: readError } = await supabase
-        .from("exam_questions")
-        .select("question")
-        .eq("user_id", user.id)
-        .eq("year", year);
-      if (readError) throw readError;
-      const have = new Set((existing || []).map((r) => r.question));
+      const rows: ExamQuestionInput[] = [];
+      const seen = new Set<string>();
+      let duplicatesInBatch = 0;
+      const push = (row: ExamQuestionInput) => {
+        const key = normalizeQuestionText(row.question);
+        if (!key || seen.has(key)) {
+          if (key) duplicatesInBatch++;
+          return;
+        }
+        seen.add(key);
+        rows.push(row);
+      };
 
-      const rows: QuestionInsert[] = [];
       for (const paper of list) {
         for (const q of paper.questions) {
-          const question = formatQuestionText(q);
-          if (have.has(question)) continue;
-          have.add(question);
-          rows.push({
-            user_id: user.id,
+          push({
             year,
             category: paper.categoryLabel,
             subject: `سورة ${q.surahName}`,
             question_type: "written",
-            question,
+            question: formatQuestionText(q),
             choices: [],
             correct_answer: formatQuestionRef(q),
             difficulty: "متوسط",
             notes: `${paper.title} — ${SAVE_MODEL_NOTE} — الجزء ${q.juzFrom} — نحو ${q.ayahCount} آيات`,
           });
         }
+        for (const q of paper.supplements) {
+          push({
+            year,
+            category: paper.categoryLabel,
+            subject: q.kind === "tajweed" ? "التجويد" : "معاني الآيات",
+            question_type: "written",
+            question: q.question,
+            choices: [],
+            correct_answer: q.answer,
+            difficulty: "متوسط",
+            notes: `${paper.title} — ${q.reference} — ${SAVE_MODEL_NOTE}`,
+          });
+        }
       }
-      const skipped = list.reduce((acc, p) => acc + p.questions.length, 0) - rows.length;
+
       if (rows.length === 0) {
+        const total = list.reduce((acc, p) => acc + p.questions.length + p.supplements.length, 0);
         toast({
           title: "كل الأسئلة موجودة في البنك مسبقًا",
-          description: `${skipped} سؤالًا مكررًا`,
+          description: `${total} سؤالًا مكررًا`,
         });
         return;
       }
-      const { error } = await supabase.from("exam_questions").insert(rows);
-      if (error) throw error;
+
+      const { saved, skipped } = await saveExamQuestions(rows);
+      const skippedTotal = skipped + duplicatesInBatch;
       toast({
-        title: `تم حفظ ${rows.length} سؤالًا في البنك`,
-        description: skipped ? `تم تخطي ${skipped} سؤالًا مكررًا` : "تجدها في تبويب «بنك إضافي»",
+        title: `تم حفظ ${saved.length} سؤالًا في البنك`,
+        description: skippedTotal
+          ? `تم تخطي ${skippedTotal} سؤالًا مكررًا`
+          : "تجدها في تبويب «بنك إضافي»",
       });
     } catch (err) {
       toast({
         title: "تعذّر الحفظ في البنك",
-        description: (err as Error).message,
+        description: examQuestionErrorMessage(err),
         variant: "destructive",
       });
     } finally {
@@ -228,9 +301,39 @@ const ExamPapersTab = ({ year }: { year: string }) => {
                 <BookOpen className="h-4 w-4" /> مفتاح التصحيح
               </Button>
               <Button
+                variant="outline"
+                className="gap-1"
+                disabled={downloadingAll}
+                onClick={() =>
+                  void downloadPdf("all", `نماذج_الاختبار_${year}`, buildPapersHtml(papers, year))
+                }
+              >
+                {downloadingAll ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <FileDown className="h-4 w-4" />
+                )}
+                {downloadingAll ? "جارٍ التجهيز..." : "تنزيل PDF"}
+              </Button>
+              <Button
+                variant="outline"
+                className="gap-1"
+                disabled={downloadingKey}
+                onClick={() =>
+                  void downloadPdf("key", `مفتاح_التصحيح_${year}`, buildAnswerKeyHtml(papers, year))
+                }
+              >
+                {downloadingKey ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <FileDown className="h-4 w-4" />
+                )}
+                PDF مفتاح التصحيح
+              </Button>
+              <Button
                 variant="secondary"
                 className="gap-1"
-                disabled={saving || !user}
+                disabled={saving || !user || !!viewAs}
                 onClick={() => void saveToBank(papers)}
               >
                 <Save className="h-4 w-4" /> حفظ الكل في البنك
@@ -242,17 +345,34 @@ const ExamPapersTab = ({ year }: { year: string }) => {
         <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           <Sparkles className="h-4 w-4 text-primary" />
           <span>
-            {category.questions} أسئلة موزَّعة على {rangeLabel} — صيغة السؤال: «اقرأ من قوله تعالى
-            ﴿…﴾ إلى قوله تعالى ﴿…﴾» بطول نحو 10 آيات أو ما يقارب 5 أسطر.
+            {category.questions} أسئلة حفظ + سؤالان في التجويد + سؤالان في المعاني موزَّعة على{" "}
+            {rangeLabel} — صيغة السؤال: «اقرأ من قوله تعالى ﴿…﴾ إلى قوله تعالى ﴿…﴾» بطول نحو 10 آيات
+            أو ما يقارب 5 أسطر.
           </span>
         </div>
 
+        <p className="text-xs text-muted-foreground">
+          التجويد: تطبيق الغنة والقلقلة من آيات الفئة. المعاني: معانٍ مختصرة مستندة إلى التفسير
+          الميسر وتفسير السعدي. قد تتكرر بعض الأسئلة الإضافية بين النماذج عند ضيق نطاق الفئة؛ مقاطع
+          الحفظ لا تتداخل.
+        </p>
+
+        <p className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs font-semibold text-primary">
+          توزيع درجات النموذج المطبوع: {HIFZ_TOTAL_MARKS} درجة لأسئلة الحفظ +{" "}
+          {RECITATION_TOTAL_MARKS} درجة لأسئلة التلاوة والتجويد والمعاني = {QUESTIONS_TOTAL_MARKS}{" "}
+          درجة، ويضيف المعلم/ة المواظبة ({ATTENDANCE_MARKS}) والسلوك ({BEHAVIOR_MARKS}) ={" "}
+          {TEACHER_TOTAL_MARKS} درجة — الدرجة النهائية {PAPER_TOTAL_MARKS}.
+        </p>
+        {viewAs && (
+          <p className="text-sm text-amber-700">
+            الحفظ والتعديل معطّلان أثناء وضع الاطلاع؛ يمكنك مراجعة بنك صاحب البيانات والطباعة.
+          </p>
+        )}
         {dataError && (
           <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
             تعذّر تحميل نص المصحف: {dataError}
             <span className="block text-xs mt-1">
-              تأكد من وجود ملف <code>public/quran/uthmani.json</code> — يمكن توليده بالأمر{" "}
-              <code>npm run quran:extract</code>.
+              تأكد من وجود ملف <code>public/quran/uthmani.json</code> المضمَّن في المشروع.
             </span>
           </div>
         )}
@@ -283,7 +403,9 @@ const ExamPapersTab = ({ year }: { year: string }) => {
                 </Badge>
                 <Badge variant="secondary">{paper.categoryLabel}</Badge>
                 <Badge variant="outline">{paper.rangeLabel}</Badge>
-                <Badge variant="outline">{paper.questions.length} أسئلة</Badge>
+                <Badge variant="outline">
+                  {paper.questions.length + paper.supplements.length} أسئلة
+                </Badge>
                 <div className="flex-1" />
                 <Button
                   size="sm"
@@ -295,9 +417,29 @@ const ExamPapersTab = ({ year }: { year: string }) => {
                 </Button>
                 <Button
                   size="sm"
+                  variant="outline"
+                  className="gap-1"
+                  disabled={pdfKey === `paper-${paper.index}`}
+                  onClick={() =>
+                    void downloadPdf(
+                      `paper-${paper.index}`,
+                      `نموذج_${paper.label}_${year}`,
+                      buildPaperHtml(paper, year),
+                    )
+                  }
+                >
+                  {pdfKey === `paper-${paper.index}` ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <FileDown className="h-3 w-3" />
+                  )}
+                  PDF
+                </Button>
+                <Button
+                  size="sm"
                   variant="secondary"
                   className="gap-1"
-                  disabled={saving || !user}
+                  disabled={saving || !user || !!viewAs}
                   onClick={() => void saveToBank([paper])}
                 >
                   <Save className="h-3 w-3" /> حفظ في البنك
@@ -318,6 +460,26 @@ const ExamPapersTab = ({ year }: { year: string }) => {
                       {q.juzTo !== q.juzFrom ? `–${q.juzTo}` : ""} — {q.ayahCount} آيات (~{q.lines}{" "}
                       سطر)
                     </p>
+                  </li>
+                ))}
+              </ol>
+              <h3 className="mt-4 mb-2 font-bold">التجويد ومعاني الآيات</h3>
+              <ol className="space-y-3" start={paper.questions.length + 1}>
+                {paper.supplements.map((q, i) => (
+                  <li key={i} className="rounded-xl bg-secondary/40 p-3">
+                    <Badge variant="outline">
+                      {q.kind === "tajweed" ? "التجويد" : "معاني الآيات"}
+                    </Badge>
+                    <p className="mt-2 font-semibold leading-8">
+                      {paper.questions.length + i + 1}. {q.question}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{q.reference}</p>
+                    <details className="mt-2 text-sm">
+                      <summary className="cursor-pointer text-primary">
+                        الإجابة الإرشادية للمصحّح
+                      </summary>
+                      <p className="mt-2">{q.answer}</p>
+                    </details>
                   </li>
                 ))}
               </ol>

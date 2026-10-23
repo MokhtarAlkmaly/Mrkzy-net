@@ -10,11 +10,21 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { Upload, Trash2, Image, Video, X } from "lucide-react";
+import { Upload, Trash2, Image, Video, X, FileText, Download } from "lucide-react";
 import { START_YEAR, END_YEAR } from "@/types/student";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { CenterHeader } from "@/components/CenterHeader";
 import { loadMediaMetadata, saveMediaMetadata, deleteMediaMetadataLocal } from "@/utils/storage";
+import {
+  MEDIA_ACCEPT,
+  classifyMediaFile,
+  filterMediaByKind,
+  formatMediaSize,
+  hijriMonthOf,
+  validateMediaSize,
+  type MediaKind,
+  type MediaKindFilter,
+} from "@/lib/mediaLibrary";
 
 const HIJRI_MONTHS = [
   "محرم",
@@ -37,7 +47,7 @@ interface MediaItem {
   month: number;
   title: string;
   file_path: string;
-  file_type: "image" | "video";
+  file_type: MediaKind;
   file_size: number;
   created_at: string;
 }
@@ -49,6 +59,7 @@ const Media = () => {
   const [uploading, setUploading] = useState(false);
   const [previewItem, setPreviewItem] = useState<MediaItem | null>(null);
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
+  const [kindFilter, setKindFilter] = useState<MediaKindFilter>("all");
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -84,23 +95,26 @@ const Media = () => {
     setUploading(true);
 
     const files = Array.from(e.target.files);
+    let uploadedCount = 0;
 
     for (const file of files) {
-      const isImage = file.type.startsWith("image/");
-      const isVideo = file.type.startsWith("video/");
-      if (!isImage && !isVideo) {
-        toast({ title: "نوع ملف غير مدعوم", description: file.name, variant: "destructive" });
+      let info: ReturnType<typeof classifyMediaFile>;
+      try {
+        // بعض الأجهزة تترك MIME فارغاً خصوصاً لملفات MKV وFLV و3GP؛ الامتداد هو البديل.
+        info = classifyMediaFile(file);
+        validateMediaSize(file.size);
+      } catch (error) {
+        toast({
+          title: "نوع ملف غير مدعوم",
+          description: error instanceof Error ? error.message : file.name,
+          variant: "destructive",
+        });
         continue;
       }
 
-      // Get current Hijri month
-      const hijriDate = new Date().toLocaleDateString("ar-SA-u-ca-islamic-umalqura", {
-        month: "numeric",
-      });
-      const currentMonth = parseInt(hijriDate) || 1;
+      const currentMonth = hijriMonthOf();
 
-      const ext = file.name.split(".").pop();
-      const filePath = `${user.id}/${selectedYear}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+      const filePath = `${user.id}/${selectedYear}/${Date.now()}_${Math.random().toString(36).slice(2)}.${info.extension || "bin"}`;
 
       const { error: uploadError } = await supabase.storage.from("media").upload(filePath, file);
       if (uploadError) {
@@ -114,14 +128,17 @@ const Media = () => {
         month: currentMonth,
         title: file.name,
         file_path: filePath,
-        file_type: isImage ? "image" : "video",
+        file_type: info.kind,
         file_size: file.size,
       });
+      uploadedCount += 1;
     }
 
     setUploading(false);
     await loadMedia();
-    toast({ title: "تم الرفع", description: `تم رفع ${files.length} ملف بنجاح` });
+    if (uploadedCount > 0) {
+      toast({ title: "تم الرفع", description: `تم رفع ${uploadedCount} ملف بنجاح` });
+    }
     e.target.value = "";
   };
 
@@ -136,15 +153,20 @@ const Media = () => {
     toast({ title: "تم الحذف", variant: "destructive" });
   };
 
-  const formatSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  const openMediaItem = (item: MediaItem) => {
+    if (item.file_type !== "document") {
+      setPreviewItem(item);
+      return;
+    }
+    const url = getUrl(item.file_path);
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
   };
+
+  const visibleMediaItems = filterMediaByKind(mediaItems, kindFilter);
 
   // Group by month
   const groupedByMonth: Record<number, MediaItem[]> = {};
-  mediaItems.forEach((item) => {
+  visibleMediaItems.forEach((item) => {
     if (!groupedByMonth[item.month]) groupedByMonth[item.month] = [];
     groupedByMonth[item.month].push(item);
   });
@@ -155,7 +177,7 @@ const Media = () => {
       dir="rtl"
     >
       <CenterHeader
-        title="الصور والفيديوهات"
+        title="مكتبة الوسائط والمستندات"
         icon={Image}
         backTo="/quran"
         backLabel="العودة للرئيسية"
@@ -182,35 +204,51 @@ const Media = () => {
             </Select>
           </div>
 
+          <Select
+            value={kindFilter}
+            onValueChange={(value) => setKindFilter(value as MediaKindFilter)}
+          >
+            <SelectTrigger className="w-40" aria-label="تصفية نوع الملف">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">كل الملفات</SelectItem>
+              <SelectItem value="image">الصور</SelectItem>
+              <SelectItem value="video">الفيديوهات</SelectItem>
+              <SelectItem value="document">المستندات</SelectItem>
+            </SelectContent>
+          </Select>
+
           <label className="cursor-pointer">
             <Button asChild disabled={uploading} className="gap-2">
               <span>
                 <Upload className="h-4 w-4" />
-                {uploading ? "جارٍ الرفع..." : "رفع صور / فيديوهات"}
+                {uploading ? "جارٍ الرفع..." : "رفع ملفات"}
               </span>
             </Button>
             <input
               type="file"
               multiple
-              accept="image/*,video/*"
+              accept={MEDIA_ACCEPT}
               onChange={handleUpload}
               className="hidden"
             />
           </label>
 
           <span className="mr-auto text-sm text-muted-foreground">
-            الملفات: <span className="font-bold text-foreground">{mediaItems.length}</span>
+            المعروض: <span className="font-bold text-foreground">{visibleMediaItems.length}</span>
+            <span className="text-muted-foreground/70"> من {mediaItems.length}</span>
           </span>
         </div>
 
         {/* Content */}
         {loading ? (
           <div className="text-center py-12 text-muted-foreground">جارٍ التحميل...</div>
-        ) : mediaItems.length === 0 ? (
+        ) : visibleMediaItems.length === 0 ? (
           <div className="text-center py-16 text-muted-foreground">
             <Image className="h-16 w-16 mx-auto mb-4 opacity-30" />
-            <p className="text-lg">لا توجد صور أو فيديوهات لعام {selectedYear}هـ</p>
-            <p className="text-sm mt-1">اضغط على "رفع صور / فيديوهات" لإضافة ملفات</p>
+            <p className="text-lg">لا توجد ملفات مطابقة لعام {selectedYear}هـ</p>
+            <p className="text-sm mt-1">اضغط على "رفع ملفات" لإضافة صور أو فيديوهات أو مستندات</p>
           </div>
         ) : (
           <div className="space-y-8">
@@ -229,7 +267,7 @@ const Media = () => {
                       >
                         <div
                           className="aspect-square cursor-pointer"
-                          onClick={() => setPreviewItem(item)}
+                          onClick={() => openMediaItem(item)}
                         >
                           {item.file_type === "image" ? (
                             <img
@@ -240,22 +278,38 @@ const Media = () => {
                             />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center bg-muted">
-                              <Video className="h-12 w-12 text-muted-foreground" />
+                              {item.file_type === "video" ? (
+                                <Video className="h-12 w-12 text-muted-foreground" />
+                              ) : (
+                                <FileText className="h-12 w-12 text-muted-foreground" />
+                              )}
                             </div>
                           )}
                         </div>
                         <div className="p-2">
                           <p className="text-xs truncate text-muted-foreground">{item.title}</p>
                           <p className="text-xs text-muted-foreground/60">
-                            {formatSize(item.file_size)}
+                            {formatMediaSize(item.file_size)}
                           </p>
                         </div>
-                        <button
-                          onClick={() => handleDelete(item)}
-                          className="absolute top-1 left-1 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
+                        <div className="absolute top-1 left-1 flex gap-1">
+                          <a
+                            href={getUrl(item.file_path)}
+                            download={item.title}
+                            onClick={(event) => event.stopPropagation()}
+                            aria-label={`تنزيل ${item.title}`}
+                            className="rounded-full bg-background/90 p-1 text-foreground shadow-sm"
+                          >
+                            <Download className="h-3 w-3" />
+                          </a>
+                          <button
+                            onClick={() => handleDelete(item)}
+                            aria-label={`حذف ${item.title}`}
+                            className="bg-destructive text-destructive-foreground rounded-full p-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>

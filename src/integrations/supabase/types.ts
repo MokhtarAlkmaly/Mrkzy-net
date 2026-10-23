@@ -707,6 +707,8 @@ export type Database = {
         Row: {
           active_year: string;
           center_name: string;
+          center_profile: Json | null;
+          center_profile_draft: Json | null;
           created_at: string;
           id: string;
           manager_signature: string;
@@ -721,6 +723,8 @@ export type Database = {
         Insert: {
           active_year?: string;
           center_name?: string;
+          center_profile?: Json | null;
+          center_profile_draft?: Json | null;
           created_at?: string;
           id?: string;
           manager_signature?: string;
@@ -735,6 +739,8 @@ export type Database = {
         Update: {
           active_year?: string;
           center_name?: string;
+          center_profile?: Json | null;
+          center_profile_draft?: Json | null;
           created_at?: string;
           id?: string;
           manager_signature?: string;

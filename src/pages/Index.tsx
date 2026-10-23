@@ -291,6 +291,23 @@ const Index = () => {
     }
   };
 
+  const handleDeleteFromCompetition = async (id: number) => {
+    if (!confirm("هل تريد فصل هذا الطالب/ة عن كشف المسابقة الحالي؟")) return;
+    const { deleteStudentFromYear } = await import("@/utils/storage");
+    await deleteStudentFromYear(dataYearKey, id);
+    setDirtyMap((previous) => {
+      const next = { ...previous };
+      delete next[id];
+      return next;
+    });
+    await loadData();
+    toast({
+      title: "تم الحذف من الكشف",
+      description: "بقي الطالب/ة محفوظاً في السجل الرسمي وبقية الأعوام",
+      variant: "destructive",
+    });
+  };
+
   const handleYearChange = async (year: string) => {
     if (isDirty && !confirm("هناك تغييرات غير محفوظة، هل تريد المتابعة بدون حفظ؟")) return;
 
@@ -795,6 +812,8 @@ const Index = () => {
               students={students}
               currentYear={currentYear}
               competitionLabel={competitionLabel}
+              onDelete={handleDeleteFromCompetition}
+              dirtyMap={dirtyMap}
               onDirtyChange={handleDirtyChange}
             />
           )}

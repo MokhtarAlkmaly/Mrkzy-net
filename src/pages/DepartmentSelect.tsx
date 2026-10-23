@@ -4,6 +4,7 @@ import { useSignOut } from "@/hooks/useSignOut";
 import { Button } from "@/components/ui/button";
 import { BookOpenText, CalendarDays, Scissors, LogOut } from "lucide-react";
 import { LogoBadge } from "@/components/LogoBadge";
+import { CenterProfilePanel } from "@/components/CenterProfilePanel";
 import { CENTER_NAME, QURAN_DEPARTMENT_NAME, TRAINING_DEPARTMENT_NAME } from "@/utils/centerInfo";
 
 const DepartmentSelect = () => {
@@ -70,6 +71,10 @@ const DepartmentSelect = () => {
             </p>
           </div>
         </Link>
+      </div>
+
+      <div className="mt-6 w-full max-w-3xl">
+        <CenterProfilePanel />
       </div>
     </div>
   );

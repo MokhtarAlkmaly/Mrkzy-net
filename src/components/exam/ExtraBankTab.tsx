@@ -19,26 +19,43 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { Plus, Pencil, Trash2, Save, Printer, Layers } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import type { Database } from "@/integrations/supabase/types";
-import { printHtml, esc } from "@/utils/report";
+import { Plus, Pencil, Trash2, Save, Printer, Layers, FileDown, Loader2 } from "lucide-react";
+import { buildPrintDocument, printHtml } from "@/utils/report";
+import { exportHtmlAsPdf } from "@/utils/nativePrint";
+import { QUESTIONS_PRINT_CSS, buildQuestionsPrintBody } from "@/utils/examQuestionsPrint";
+import {
+  deleteExamQuestion,
+  examQuestionErrorMessage,
+  loadExamQuestions,
+  saveExamQuestion,
+} from "@/utils/examStorage";
+import {
+  examQuestionTypes,
+  examDifficulties,
+  filterExamQuestions,
+  parseChoicesText,
+  type ExamQuestion,
+  type ExamQuestionInput,
+} from "@/lib/exam-questions";
 
-type QuestionType = "mcq" | "true_false" | "written";
+type QuestionType = ExamQuestionInput["question_type"];
 
-type QuestionRow = Database["public"]["Tables"]["exam_questions"]["Row"] & {
-  choices: string[];
+const TYPE_LABELS: Record<QuestionType, string> = examQuestionTypes;
+
+const DIFFICULTIES = examDifficulties;
+
+type ExamForm = {
+  category: string;
+  subject: string;
+  question_type: QuestionType;
+  question: string;
+  choicesText: string;
+  correct_answer: string;
+  difficulty: ExamQuestionInput["difficulty"];
+  notes: string;
 };
 
-const TYPE_LABELS: Record<QuestionType, string> = {
-  mcq: "اختيار من متعدد",
-  true_false: "صح / خطأ",
-  written: "سؤال مقالي",
-};
-
-const DIFFICULTIES = ["سهل", "متوسط", "صعب"];
-
-const emptyForm = () => ({
+const emptyForm = (): ExamForm => ({
   category: "",
   subject: "",
   question_type: "mcq" as QuestionType,
@@ -54,36 +71,32 @@ const emptyForm = () => ({
  * أما أسئلة النماذج المولَّدة من المصحف فمكانها تبويب «نماذج الاختبار».
  */
 const ExtraBankTab = ({ year }: { year: string }) => {
-  const { user } = useAuth();
+  const { user, viewAs } = useAuth();
   const { toast } = useToast();
-  const [rows, setRows] = useState<QuestionRow[]>([]);
+  const [rows, setRows] = useState<ExamQuestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [subjectFilter, setSubjectFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState(emptyForm());
+  const [form, setForm] = useState<ExamForm>(emptyForm());
+  const [exportingPdf, setExportingPdf] = useState(false);
 
+  // القراءة محصورة بهذا العام من قاعدة MrkzyDatabase المحلية.
   const load = useCallback(async () => {
     if (!year || !user) return;
     setLoading(true);
-    const { data, error } = await supabase
-      .from("exam_questions")
-      .select("*")
-      .eq("user_id", user.id)
-      .eq("year", year)
-      .order("created_at", { ascending: false });
-    if (error) {
-      toast({ title: "تعذّر تحميل الأسئلة", description: error.message, variant: "destructive" });
-    } else {
-      setRows(
-        (data || []).map((r) => ({
-          ...r,
-          choices: Array.isArray(r.choices) ? (r.choices as string[]) : [],
-        })),
-      );
+    try {
+      setRows(await loadExamQuestions(year));
+    } catch (error) {
+      toast({
+        title: "تعذّر تحميل الأسئلة",
+        description: examQuestionErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [year, user, toast]);
 
   useEffect(() => {
@@ -108,12 +121,7 @@ const ExtraBankTab = ({ year }: { year: string }) => {
   );
 
   const filteredRows = useMemo(
-    () =>
-      rows
-        .filter((r) => (subjectFilter === "all" ? true : r.subject === subjectFilter))
-        .filter((r) =>
-          categoryFilter === "all" ? true : (r.category || "").trim() === categoryFilter,
-        ),
+    () => filterExamQuestions(rows, { subject: subjectFilter, category: categoryFilter }),
     [rows, subjectFilter, categoryFilter],
   );
 
@@ -123,7 +131,7 @@ const ExtraBankTab = ({ year }: { year: string }) => {
     setDialogOpen(true);
   };
 
-  const openEdit = (r: QuestionRow) => {
+  const openEdit = (r: ExamQuestion) => {
     setEditingId(r.id);
     setForm({
       category: r.category || "",
@@ -139,78 +147,91 @@ const ExtraBankTab = ({ year }: { year: string }) => {
   };
 
   const save = async () => {
-    if (!user) return;
+    if (!user || viewAs) return;
+    if (form.question_type === "mcq") {
+      const choices = form.choicesText
+        .split(/[،,]/)
+        .map((c) => c.trim())
+        .filter(Boolean);
+      if (choices.length < 2 || !choices.includes(form.correct_answer.trim())) {
+        toast({
+          title: "أدخل خيارين على الأقل وإجابة صحيحة مطابقة لأحد الخيارات",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
     if (!form.question.trim()) {
       toast({ title: "نص السؤال مطلوب", variant: "destructive" });
       return;
     }
-    const choices =
-      form.question_type === "mcq"
-        ? form.choicesText
-            .split(/[،,]/)
-            .map((c) => c.trim())
-            .filter(Boolean)
-        : [];
-    const payload = {
-      user_id: user.id,
+    const payload: ExamQuestionInput = {
       year,
       category: form.category.trim(),
       subject: form.subject.trim(),
       question_type: form.question_type,
       question: form.question.trim(),
-      choices,
+      choices: form.question_type === "mcq" ? parseChoicesText(form.choicesText) : [],
       correct_answer: form.correct_answer.trim() || null,
       difficulty: form.difficulty,
       notes: form.notes.trim() || null,
     };
-    const { error } = editingId
-      ? await supabase.from("exam_questions").update(payload).eq("id", editingId)
-      : await supabase.from("exam_questions").insert(payload);
-    if (error) {
-      toast({ title: "تعذّر الحفظ", description: error.message, variant: "destructive" });
-      return;
+    try {
+      // محلي فوراً (يعمل بلا إنترنت) ثم الرفع في الخلفية عبر الطابور.
+      await saveExamQuestion(payload, editingId ?? undefined);
+      toast({ title: editingId ? "تم التعديل" : "تمت الإضافة" });
+      setDialogOpen(false);
+      await load();
+    } catch (error) {
+      toast({
+        title: "تعذّر الحفظ",
+        description: examQuestionErrorMessage(error),
+        variant: "destructive",
+      });
     }
-    toast({ title: editingId ? "تم التعديل" : "تمت الإضافة" });
-    setDialogOpen(false);
-    await load();
   };
 
   const remove = async (id: string) => {
+    if (viewAs) return;
     if (!confirm("حذف هذا السؤال؟")) return;
-    const { error } = await supabase.from("exam_questions").delete().eq("id", id);
-    if (error) {
-      toast({ title: "تعذّر الحذف", description: error.message, variant: "destructive" });
-      return;
+    try {
+      await deleteExamQuestion(id);
+      toast({ title: "تم الحذف", variant: "destructive" });
+      await load();
+    } catch (error) {
+      toast({
+        title: "تعذّر الحذف",
+        description: examQuestionErrorMessage(error),
+        variant: "destructive",
+      });
     }
-    toast({ title: "تم الحذف", variant: "destructive" });
-    await load();
   };
 
+  /**
+   * مستند طباعة الأسئلة بالشكل المعتمد (خط نسخي، عنوان أخضر بخط أفقي، سطر
+   * إجابة أخضر) — انظر `examQuestionsPrint`.
+   */
+  const buildQuestionsHtml = () =>
+    buildQuestionsPrintBody(filteredRows, {
+      year,
+      categoryLabel: categoryFilter !== "all" ? categoryFilter : undefined,
+      subjectLabel: subjectFilter !== "all" ? subjectFilter : undefined,
+    });
+
   const printQuestions = () => {
-    const categoryLabel = categoryFilter !== "all" ? ` — فئة الحفظ: ${esc(categoryFilter)}` : "";
-    const html = `
-      <h2 style="text-align:center">بنك أسئلة الاختبارات — ${esc(year)}هـ${categoryLabel}</h2>
-      <ol style="font-size:14pt;line-height:2">
-        ${filteredRows
-          .map(
-            (r) => `
-          <li>
-            <b>${esc(r.question)}</b>
-            ${
-              r.question_type === "mcq" && r.choices.length
-                ? `<ul>${r.choices.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>`
-                : ""
-            }
-            ${
-              r.correct_answer && r.question_type !== "mcq"
-                ? `<div style="color:#0e6b3a;font-size:12pt">الإجابة: ${esc(r.correct_answer)}</div>`
-                : ""
-            }
-          </li>`,
-          )
-          .join("")}
-      </ol>`;
-    void printHtml(`أسئلة_${year}`, html);
+    void printHtml(`أسئلة_${year}`, buildQuestionsHtml(), QUESTIONS_PRINT_CSS);
+  };
+
+  const downloadQuestionsPdf = async () => {
+    setExportingPdf(true);
+    try {
+      await exportHtmlAsPdf(
+        buildPrintDocument(`أسئلة_${year}`, buildQuestionsHtml(), QUESTIONS_PRINT_CSS),
+        `أسئلة_${year}`,
+      );
+    } finally {
+      setExportingPdf(false);
+    }
   };
 
   return (
@@ -252,7 +273,20 @@ const ExtraBankTab = ({ year }: { year: string }) => {
           <Button variant="outline" className="gap-1" onClick={printQuestions}>
             <Printer className="h-4 w-4" /> طباعة
           </Button>
-          <Button className="gap-1" onClick={openAdd}>
+          <Button
+            variant="outline"
+            className="gap-1"
+            onClick={() => void downloadQuestionsPdf()}
+            disabled={exportingPdf || filteredRows.length === 0}
+          >
+            {exportingPdf ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <FileDown className="h-4 w-4" />
+            )}
+            PDF
+          </Button>
+          <Button className="gap-1" disabled={!!viewAs} onClick={openAdd}>
             <Plus className="h-4 w-4" /> سؤال جديد
           </Button>
         </div>
@@ -283,10 +317,20 @@ const ExtraBankTab = ({ year }: { year: string }) => {
                 </Badge>
                 <Badge variant="outline">{r.difficulty}</Badge>
                 <div className="flex-1" />
-                <Button size="sm" variant="secondary" onClick={() => openEdit(r)}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={!!viewAs}
+                  onClick={() => openEdit(r)}
+                >
                   <Pencil className="h-3 w-3" />
                 </Button>
-                <Button size="sm" variant="destructive" onClick={() => void remove(r.id)}>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  disabled={!!viewAs}
+                  onClick={() => void remove(r.id)}
+                >
                   <Trash2 className="h-3 w-3" />
                 </Button>
               </div>
@@ -397,7 +441,9 @@ const ExtraBankTab = ({ year }: { year: string }) => {
                 <label className="text-sm font-medium">مستوى الصعوبة</label>
                 <Select
                   value={form.difficulty}
-                  onValueChange={(v) => setForm({ ...form, difficulty: v })}
+                  onValueChange={(v) =>
+                    setForm({ ...form, difficulty: v as ExamQuestionInput["difficulty"] })
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue />
