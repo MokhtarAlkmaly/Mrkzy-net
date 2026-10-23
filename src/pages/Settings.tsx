@@ -55,6 +55,7 @@ import {
 } from "@/utils/users";
 import { supabase } from "@/integrations/supabase/client";
 import { FolderDatabaseSettings } from "@/components/FolderDatabaseSettings";
+import { StudentRegistryImportExport } from "@/components/StudentRegistryImportExport";
 
 const columnTypeLabels: Record<NonNullable<CustomColumnDef["type"]>, string> = {
   text: "نص",
@@ -399,6 +400,10 @@ const Settings = () => {
                 </p>
               </div>
             )}
+
+            <FolderDatabaseSettings />
+
+            <StudentRegistryImportExport readOnly={readOnly} />
 
             <div className="space-y-5 rounded-[1.5rem] border border-white/70 bg-card/90 shadow-xl shadow-primary/5 p-5">
               <div>

@@ -555,7 +555,7 @@ export interface CachedMedia {
   month: number;
   title: string;
   file_path: string;
-  file_type: "image" | "video";
+  file_type: "image" | "video" | "document";
   file_size: number;
   created_at?: string;
 }

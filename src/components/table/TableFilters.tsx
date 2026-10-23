@@ -11,6 +11,9 @@ import { Button } from "@/components/ui/button";
 import { Search, Filter, Printer, ChevronDown, ChevronUp } from "lucide-react";
 
 interface Props {
+  teachers: string[];
+  selectedTeacher: string;
+  onTeacherChange: (value: string) => void;
   nameFilter: string;
   onNameFilterChange: (value: string) => void;
   statusFilter: string;
@@ -19,11 +22,16 @@ interface Props {
   onGradeFilterChange: (value: string) => void;
   partsFilter: string;
   onPartsFilterChange: (value: string) => void;
+  cumulativeHifzFilter: string;
+  onCumulativeHifzFilterChange: (value: string) => void;
   onPrintFiltered: () => void;
   hasFilters: boolean;
 }
 
 export const TableFilters = ({
+  teachers,
+  selectedTeacher,
+  onTeacherChange,
   nameFilter,
   onNameFilterChange,
   statusFilter,
@@ -32,32 +40,37 @@ export const TableFilters = ({
   onGradeFilterChange,
   partsFilter,
   onPartsFilterChange,
+  cumulativeHifzFilter,
+  onCumulativeHifzFilterChange,
   onPrintFiltered,
   hasFilters,
 }: Props) => {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <div className="overflow-hidden rounded-[1.5rem] border border-white/70 bg-card/90 shadow-lg shadow-primary/5 backdrop-blur print:hidden">
+    <div className="overflow-hidden rounded-2xl border border-border/30 bg-card/80 shadow-sm backdrop-blur print:hidden">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full items-center justify-between gap-3 p-4 transition-colors hover:bg-primary/5"
+        className="flex w-full items-center justify-between gap-2.5 px-3 py-2.5 transition-colors hover:bg-primary/[0.03]"
       >
-        <div className="flex items-center gap-3 text-primary">
-          <span className="grid h-10 w-10 place-items-center rounded-2xl bg-primary/10">
-            <Filter className="h-4 w-4" />
+        <div className="flex items-center gap-2.5 text-primary">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/[0.07] ring-1 ring-primary/10">
+            <Filter className="h-3.5 w-3.5 text-primary/80" />
           </span>
           <span className="text-start">
-            <span className="block font-black">تصفية البيانات</span>
-            <span className="block text-xs text-muted-foreground">ابحث ورتّب الكشف بسرعة</span>
+            <span className="block text-[12px] font-bold tracking-tight">تصفية البيانات</span>
+            <span className="block text-[10px] font-normal text-muted-foreground/70">
+              ابحث ورتّب الكشف بسرعة
+            </span>
           </span>
           {hasFilters && (
-            <span className="rounded-full bg-primary px-2 py-1 text-xs text-primary-foreground">
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[10px] font-medium text-primary-foreground shadow-sm">
+              <span className="h-1.5 w-1.5 rounded-full bg-white/80" />
               مفعّل
             </span>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5">
           {hasFilters && (
             <Button
               onClick={(e) => {
@@ -66,34 +79,52 @@ export const TableFilters = ({
               }}
               variant="secondary"
               size="sm"
-              className="h-9 gap-1 rounded-full text-xs"
+              className="h-7 gap-1 rounded-full bg-primary/90 px-3 text-[11px] font-medium shadow-sm hover:bg-primary"
             >
               <Printer className="h-3 w-3" />
               طباعة
             </Button>
           )}
           {isOpen ? (
-            <ChevronUp className="h-4 w-4 text-muted-foreground" />
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-muted/60">
+              <ChevronUp className="h-3 w-3 text-muted-foreground" />
+            </span>
           ) : (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-muted/60">
+              <ChevronDown className="h-3 w-3 text-muted-foreground" />
+            </span>
           )}
         </div>
       </button>
 
       {isOpen && (
-        <div className="grid grid-cols-1 gap-3 border-t border-border/60 bg-background/45 p-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-2 border-t border-border/30 bg-muted/15 px-3 py-3 sm:grid-cols-2 lg:grid-cols-6">
+          <Select value={selectedTeacher} onValueChange={onTeacherChange}>
+            <SelectTrigger className="h-8 rounded-full bg-background/70 text-[11px] font-medium border-border/30 shadow-sm">
+              <SelectValue placeholder="المعلم/ة" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">كل المعلمين والمعلمات</SelectItem>
+              {teachers.map((teacher) => (
+                <SelectItem key={teacher} value={teacher}>
+                  {teacher}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           <div className="relative">
-            <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/70" />
             <Input
               value={nameFilter}
               onChange={(e) => onNameFilterChange(e.target.value)}
               placeholder="بحث بالاسم..."
-              className="h-11 rounded-2xl pr-10 text-sm"
+              className="h-8 rounded-full border-border/30 bg-background/70 pr-8 text-[11px] shadow-sm"
             />
           </div>
 
           <Select value={statusFilter} onValueChange={onStatusFilterChange}>
-            <SelectTrigger className="h-11 rounded-2xl bg-background text-sm">
+            <SelectTrigger className="h-8 rounded-full bg-background/70 text-[11px] font-medium border-border/30 shadow-sm">
               <SelectValue placeholder="الحالة" />
             </SelectTrigger>
             <SelectContent>
@@ -104,7 +135,7 @@ export const TableFilters = ({
           </Select>
 
           <Select value={gradeFilter} onValueChange={onGradeFilterChange}>
-            <SelectTrigger className="h-11 rounded-2xl bg-background text-sm">
+            <SelectTrigger className="h-8 rounded-full bg-background/70 text-[11px] font-medium border-border/30 shadow-sm">
               <SelectValue placeholder="التقدير" />
             </SelectTrigger>
             <SelectContent>
@@ -117,13 +148,27 @@ export const TableFilters = ({
             </SelectContent>
           </Select>
 
+          <Select value={cumulativeHifzFilter} onValueChange={onCumulativeHifzFilterChange}>
+            <SelectTrigger className="h-8 rounded-full bg-background/70 text-[11px] font-medium border-border/30 shadow-sm">
+              <SelectValue placeholder="الحفظ التراكمي" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">كل فئات الحفظ</SelectItem>
+              {Array.from({ length: 30 }, (_, index) => index + 1).map((part) => (
+                <SelectItem key={part} value={String(part)}>
+                  {part} جزء
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           <Input
             type="number"
             value={partsFilter}
             onChange={(e) => onPartsFilterChange(e.target.value)}
             placeholder="الحد الأدنى للحفظ"
             min="0"
-            className="h-11 rounded-2xl bg-background text-sm"
+            className="h-8 rounded-full border-border/30 bg-background/70 text-[11px] shadow-sm"
           />
         </div>
       )}

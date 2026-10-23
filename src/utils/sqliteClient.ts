@@ -12,6 +12,7 @@
  */
 
 import type {
+  CapacitorSQLitePlugin,
   SQLiteConnection as SQLiteConnectionType,
   SQLiteDBConnection,
 } from "@capacitor-community/sqlite";
@@ -209,9 +210,30 @@ const MIGRATE_STUDENTS_COLS = [
 ];
 
 let sqliteConn: SQLiteConnectionType | null = null;
+let capacitorSQLite: CapacitorSQLitePlugin | null = null;
 let dbConn: SQLiteDBConnection | null = null;
 let initPromise: Promise<SQLiteDBConnection> | null = null;
 let platformCache: string | null = null;
+
+/**
+ * يعالج بقاء اتصال أصلي مفتوح بعد إعادة تحميل WebView. في تلك الحالة قد
+ * يقول createConnection إن الاتصال موجود بينما لا يعرفه مدير JavaScript
+ * الجديد؛ نسترجعه إن أمكن، أو نغلق الاتصال اليتيم وننشئه مجدداً دون مسّ
+ * ملف القاعدة أو أي بيانات.
+ */
+const getOrCreateConnection = async (sqlite: SQLiteConnectionType): Promise<SQLiteDBConnection> => {
+  const { result: alreadyOpen } = await sqlite.isConnection(DB_NAME, false);
+  if (alreadyOpen) return sqlite.retrieveConnection(DB_NAME, false);
+
+  try {
+    return await sqlite.createConnection(DB_NAME, false, "no-encryption", DB_VERSION, false);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/connection .* already exists/i.test(message) || !capacitorSQLite) throw error;
+    await capacitorSQLite.closeConnection({ database: DB_NAME, readonly: false });
+    return sqlite.createConnection(DB_NAME, false, "no-encryption", DB_VERSION, false);
+  }
+};
 
 const assertBrowser = () => {
   if (typeof window === "undefined") {
@@ -354,16 +376,13 @@ export const getDB = (): Promise<SQLiteDBConnection> => {
   initPromise = (async () => {
     try {
       const { CapacitorSQLite, SQLiteConnection } = await import("@capacitor-community/sqlite");
-      const sqlite = new SQLiteConnection(CapacitorSQLite);
-      sqliteConn = sqlite;
+      capacitorSQLite ??= CapacitorSQLite;
+      sqliteConn ??= new SQLiteConnection(capacitorSQLite);
+      const sqlite = sqliteConn;
 
       await ensureWebStore(sqlite);
 
-      const { result: alreadyOpen } = await sqlite.isConnection(DB_NAME, false);
-      const db = alreadyOpen
-        ? await sqlite.retrieveConnection(DB_NAME, false)
-        : await sqlite.createConnection(DB_NAME, false, "no-encryption", DB_VERSION, false);
-
+      const db = await getOrCreateConnection(sqlite);
       await db.open();
       await db.execute(SCHEMA_SQL, true);
 

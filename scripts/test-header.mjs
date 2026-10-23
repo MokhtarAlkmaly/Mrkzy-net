@@ -131,6 +131,7 @@ try {
     "Home.tsx",
     "Management.tsx",
     "Media.tsx",
+    "OverdueAlerts.tsx",
     "Settings.tsx",
     "StudentCompetition.tsx",
     "Students.tsx",
@@ -140,7 +141,7 @@ try {
     "Users.tsx",
   ];
   check(
-    "جميع الصفحات الـ17 الموحّدة تستعمل <CenterHeader",
+    "جميع الصفحات الـ18 الموحّدة تستعمل <CenterHeader",
     unifiedHeaderPages.every((file) =>
       readFileSync(join(root, "src/pages", file), "utf8").includes("<CenterHeader"),
     ),

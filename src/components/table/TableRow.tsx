@@ -1,5 +1,7 @@
 import { Student } from "@/types/student";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { FileText, Trash2 } from "lucide-react";
 import { StudentReport } from "@/components/StudentReport";
 import { useState, useEffect, useCallback } from "react";
 import { resolveBaseHifz, calculateGrade, calculatePrize } from "@/utils/calculations";
@@ -9,13 +11,26 @@ interface Props {
   student: Student;
   index: number;
   currentYear: string;
+  onDelete: (id: number) => void;
   onDirtyChange: (
     studentId: number,
     data: { name: string; history: HifzHistory; yearData: YearData },
   ) => void;
+  /** عدد مرات تكرار الاسم في السجل — يُمرَّر من الجدول الأب لتمييز الأسماء المكررة */
+  duplicateNameCount?: number;
+  /** توليد نموذج اختبار مخصص باسم هذا الطالب/ة (من مولّد نماذج المسابقة) */
+  onGeneratePaper?: (student: Student) => void;
 }
 
-export const TableRow = ({ student, index, currentYear, onDirtyChange }: Props) => {
+export const TableRow = ({
+  student,
+  index,
+  currentYear,
+  onDelete,
+  onDirtyChange,
+  duplicateNameCount = 0,
+  onGeneratePaper,
+}: Props) => {
   const currentYearNum = parseInt(currentYear);
   const [name, setName] = useState(student.name);
   const [history, setHistory] = useState<HifzHistory>(student.hifzHistory || {});
@@ -110,19 +125,41 @@ export const TableRow = ({ student, index, currentYear, onDirtyChange }: Props) 
     notifyDirty(name, history, updated);
   };
 
+  const isDuplicateName = duplicateNameCount > 1;
+
   return (
     <tr className="group transition-colors odd:bg-white even:bg-secondary/20 hover:bg-primary/5">
-      <td className="sticky right-0 z-10 w-[50px] min-w-[50px] border-b border-l border-border/70 bg-card p-1 text-center font-black text-primary shadow-[-10px_0_18px_-18px_rgba(0,0,0,.35)] group-hover:bg-primary/5">
+      <td className="sticky right-0 z-10 w-[50px] min-w-[50px] border-b border-l border-border/70 bg-card p-1 text-center font-black text-primary shadow-[-10px_0_18px_-18px_rgba(0,0,0,.35)] group-hover:bg-emerald-50 dark:group-hover:bg-emerald-950">
         {index}
       </td>
 
-      <td className="sticky right-[50px] z-10 border-b border-l border-border/70 bg-card p-1 transition-colors shadow-[-10px_0_18px_-18px_rgba(0,0,0,.35)] group-hover:bg-primary/5">
+      <td
+        className={`sticky right-[50px] z-10 w-[280px] min-w-[280px] border-b border-l border-border/70 p-1 transition-colors shadow-[-10px_0_18px_-18px_rgba(0,0,0,.35)] ${
+          isDuplicateName
+            ? "bg-amber-100 group-hover:bg-amber-200 dark:bg-amber-800 dark:group-hover:bg-amber-700"
+            : "bg-card group-hover:bg-emerald-50 dark:group-hover:bg-emerald-950"
+        }`}
+      >
         <Input
           value={name}
           onChange={(e) => updateName(e.target.value)}
           placeholder="الاسم"
-          className="h-10 rounded-xl border-0 bg-background/70 text-center font-semibold focus-visible:ring-1"
+          title={
+            isDuplicateName
+              ? `⚠️ اسم مكرر: يوجد ${duplicateNameCount} طلاب بنفس الاسم في السجل`
+              : undefined
+          }
+          className={`h-10 rounded-xl border-0 text-center font-semibold focus-visible:ring-1 ${
+            isDuplicateName
+              ? "bg-amber-50 text-amber-900 ring-2 ring-amber-400 dark:bg-amber-900 dark:text-amber-100"
+              : "bg-background/70"
+          }`}
         />
+      </td>
+
+      {/* إدارة ربط الطالب/ة بالمعلم تبقى في صفحة الحلقات؛ هنا للعرض فقط. */}
+      <td className="border-b border-l border-border/70 p-2 text-center font-semibold">
+        {yearData.teacher || student.teacher || "—"}
       </td>
 
       <td className="border-b border-l border-border/70 bg-accent/20 p-1 text-center font-bold">
@@ -229,6 +266,31 @@ export const TableRow = ({ student, index, currentYear, onDirtyChange }: Props) 
 
       <td className="border-b border-l border-border/70 p-1 text-center">
         <StudentReport student={student} />
+      </td>
+
+      <td className="border-b border-l border-border/70 p-1 text-center">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onGeneratePaper?.(student)}
+          disabled={!onGeneratePaper}
+          title={`توليد نموذج اختبار باسم ${student.name || "الطالب/ة"}`}
+          aria-label="توليد نموذج اختبار"
+          className="h-9 w-9 rounded-xl border-primary/25 p-0 text-primary hover:bg-primary/10 hover:text-primary"
+        >
+          <FileText className="h-4 w-4" />
+        </Button>
+      </td>
+
+      <td className="border-b border-l border-border/70 p-1 text-center">
+        <Button
+          variant="destructive"
+          size="sm"
+          onClick={() => onDelete(student.id)}
+          className="h-9 w-9 rounded-xl p-0"
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
       </td>
     </tr>
   );

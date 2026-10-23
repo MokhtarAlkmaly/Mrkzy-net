@@ -1,4 +1,9 @@
 import {
+  buildSupplementPool,
+  pickSupplements,
+  type SupplementQuestion,
+} from "@/utils/examSupplementQuestions";
+import {
   CHARS_PER_LINE,
   JUZ_COUNT,
   type QuranData,
@@ -62,10 +67,21 @@ export const HIFZ_CATEGORIES: HifzCategory[] = [
 export const getCategory = (id: string): HifzCategory =>
   HIFZ_CATEGORIES.find((c) => c.id === id) ?? HIFZ_CATEGORIES[0];
 
-/** تسميات النماذج: أ، ب، ج، د، هـ */
-export const MODEL_LABELS = ["أ", "ب", "ج", "د", "هـ", "و", "ز", "ح"];
 export const MIN_MODELS = 2;
-export const MAX_MODELS = 5;
+/** طول قائمة الاختيار اليدوي في واجهات النماذج — وسقف التوليد الافتراضي */
+export const MAX_MODELS = 30;
+/**
+ * الحد الأقصى العملي عند رفع السقف (توليد أوراق الطلاب): حدٌّ لحجم مستند
+ * الطباعة وزمن تجهيز PDF، لا حدٌّ رياضي — سقف كل فئة يحدّده `maxFeasibleModels`.
+ */
+export const HARD_MODEL_CEILING = 200;
+export const MODEL_LABELS = Array.from({ length: MAX_MODELS }, (_, i) =>
+  String(i + 1).padStart(2, "0"),
+);
+
+/** تسمية النموذج حسب ترتيبه: 01…30 من القائمة المعتمدة، ثم 031…200 بثلاث خانات */
+export const modelLabel = (index: number): string =>
+  index < MODEL_LABELS.length ? MODEL_LABELS[index] : String(index + 1).padStart(3, "0");
 
 export interface JuzRange {
   fromJuz: number;
@@ -188,6 +204,7 @@ export interface ExamPaper {
   categoryLabel: string;
   rangeLabel: string;
   questions: PaperQuestion[];
+  supplements: SupplementQuestion[];
 }
 
 /** صيغة السؤال كما تُطبع في ورقة الاختبار */
@@ -236,10 +253,13 @@ const randomInt = (rng: () => number, min: number, max: number): number => {
 
 export interface GenerateOptions {
   category: HifzCategory;
-  /** عدد النماذج 2..5 */
+  /** عدد النماذج 2..30 (وما يصل إلى HARD_MODEL_CEILING مع allowBeyondMax) */
   models: number;
   direction?: RangeDirection;
   rng?: () => number;
+  includeSupplements?: boolean;
+  /** رفع سقف التوليد من MAX_MODELS إلى HARD_MODEL_CEILING — لتوليد أوراق الطلاب */
+  allowBeyondMax?: boolean;
 }
 
 /**
@@ -249,20 +269,31 @@ export interface GenerateOptions {
 export const generatePapers = (data: QuranData, opts: GenerateOptions): ExamPaper[] => {
   const rng = opts.rng ?? Math.random;
   const direction: RangeDirection = opts.direction ?? "end";
-  const models = Math.min(MAX_MODELS, Math.max(MIN_MODELS, Math.round(opts.models)));
+  const ceiling = opts.allowBeyondMax ? HARD_MODEL_CEILING : MAX_MODELS;
+  const models = Math.min(
+    ceiling,
+    Math.max(MIN_MODELS, Math.round(Number.isFinite(opts.models) ? opts.models : MIN_MODELS)),
+  );
   const category = opts.category;
   const range = resolveJuzRange(category, direction);
   const blocks = buildAyahBlocks(data, category, range);
   const rangeLabel = describeJuzRange(range);
 
+  const supplementPool = opts.includeSupplements === false ? [] : buildSupplementPool(data, range);
+  // خلط البنك مرة واحدة ينوّع مواضع التجويد والمعاني في كل توليد.
+  for (let i = supplementPool.length - 1; i > 0; i--) {
+    const j = randomInt(rng, 0, i);
+    [supplementPool[i], supplementPool[j]] = [supplementPool[j], supplementPool[i]];
+  }
   const papers: ExamPaper[] = [];
   for (let m = 0; m < models; m++) {
     papers.push({
       index: m,
-      label: MODEL_LABELS[m],
-      title: `النموذج (${MODEL_LABELS[m]})`,
+      label: modelLabel(m),
+      title: `النموذج (${modelLabel(m)})`,
       categoryLabel: category.label,
       rangeLabel,
+      supplements: pickSupplements(supplementPool, m),
       questions: blocks.map((block, b) => {
         const blockLength = block.toId - block.fromId + 1;
         // خانة كل نموذج داخل المقطع — تضمن مواضع مختلفة ومنفصلة
@@ -272,10 +303,14 @@ export const generatePapers = (data: QuranData, opts: GenerateOptions): ExamPape
           m === models - 1
             ? block.toId
             : Math.min(block.fromId + (m + 1) * slotSize - 1, block.toId);
-        let startId = randomInt(rng, slotFrom, slotTo);
-        // لا نبدأ من آخر آية في السورة (حتى لا يصبح السؤال آية واحدة فقط)
-        const surahEnd = surahLastId(fromGlobalId(startId).surah);
-        if (startId >= surahEnd && surahEnd > 1) startId = Math.max(slotFrom, surahEnd - 1);
+        // لا نختار آخر آية من الخانة أو السورة: ضمان آيتين على الأقل
+        // مهم عند توليد ٣٠ نموذجًا، حيث تصبح الخانات أصغر.
+        const candidates: number[] = [];
+        for (let id = slotFrom; id < slotTo; id++) {
+          if (id < surahLastId(fromGlobalId(id).surah)) candidates.push(id);
+        }
+        if (!candidates.length) throw new Error("نطاق الحفظ لا يكفي لعدد النماذج المطلوب");
+        const startId = candidates[randomInt(rng, 0, candidates.length - 1)];
         const passage = buildPassage(data, startId, slotTo);
         const from = fromGlobalId(passage.fromId);
         const to = fromGlobalId(passage.toId);
@@ -302,9 +337,61 @@ export const generatePapers = (data: QuranData, opts: GenerateOptions): ExamPape
   return papers;
 };
 
+/** اللقب المناسب لورقة الاختبار حسب الجنس المسجّل (ذكر/أنثى/بدون) */
+export const studentTitle = (gender?: string): string => {
+  const value = (gender || "").trim().toLowerCase();
+  if (value === "أنثى" || value === "انثى" || value === "female") return "الطالبة";
+  if (value === "ذكر" || value === "male") return "الطالب";
+  return "الطالب/ة";
+};
+
 /** أكبر عدد أسئلة ممكن في نموذج لفئة معيّنة (يُستخدم في التحقق قبل التوليد) */
 export const categoryQuestionCount = (category: HifzCategory, data?: QuranData): number => {
   if (!data) return category.questions;
   const range = resolveJuzRange(category, "end");
   return buildAyahBlocks(data, category, range).length;
+};
+
+/**
+ * السقف الحقيقي لعدد النماذج في فئة: أكبر عدد يبقى لكل نموذجٍ فيه موضع مستقل.
+ * ------------------------------------------------------------------
+ * القاعدة هنا مطابقة حرفيًا لمرشّحات بدايات المقاطع في `generatePapers`:
+ * خانة كل نموذج داخل المقطع هي `slotFrom…slotTo`، والبدايات المقبولة منها
+ * هي حتى `slotTo - 1` — لأن `buildPassage` يحدّ المقطع بآية الخانة الأخيرة
+ * (فلا يعبر إلى خانة النموذج التالي) وبنهاية السورة — ولا تُقبل بداية عند
+ * آخر آية في السورة (ضمان آيتين على الأقل). تُفشل الدفعة بمجرد خلوّ خانة
+ * واحدة من بداية صالحة، وهذا هو السقف.
+ */
+export const maxFeasibleModels = (
+  data: QuranData,
+  category: HifzCategory,
+  direction: RangeDirection = "end",
+): number => {
+  const range = resolveJuzRange(category, direction);
+  const blocks = buildAyahBlocks(data, category, range);
+  /** هل لخانة نموذجٍ معيّن بداية صالحة واحدة على الأقل؟ (نفس حلقة المولّد) */
+  const hasCandidate = (block: AyahBlock, models: number, m: number): boolean => {
+    const blockLength = block.toId - block.fromId + 1;
+    const slotSize = Math.max(1, Math.floor(blockLength / models));
+    const slotFrom = block.fromId + m * slotSize;
+    const slotTo =
+      m === models - 1 ? block.toId : Math.min(block.fromId + (m + 1) * slotSize - 1, block.toId);
+    for (let id = slotFrom; id < slotTo; id++) {
+      if (id < surahLastId(fromGlobalId(id).surah)) return true;
+    }
+    return false;
+  };
+  for (let models = HARD_MODEL_CEILING; models > MIN_MODELS; models--) {
+    if (
+      blocks.every((block) => {
+        for (let m = 0; m < models; m++) {
+          if (!hasCandidate(block, models, m)) return false;
+        }
+        return true;
+      })
+    ) {
+      return models;
+    }
+  }
+  return MIN_MODELS;
 };

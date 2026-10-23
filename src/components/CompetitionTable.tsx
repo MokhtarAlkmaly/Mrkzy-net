@@ -1,12 +1,20 @@
+import { printHtmlDocument } from "@/utils/nativePrint";
+import { esc } from "@/utils/report";
+import { Button } from "@/components/ui/button";
+import { Wand2 } from "lucide-react";
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { Student, HifzHistory, YearData } from "@/types/student";
 import { TableHeader } from "./table/TableHeader";
 import { SortField, SortDirection } from "./table/TableHeader";
 import { TableRow } from "./table/TableRow";
 import { TableFilters } from "./table/TableFilters";
+import { GenerateStudentPapersDialog } from "@/components/exam/GenerateStudentPapersDialog";
 import { calculateGrade, resolveBaseHifz } from "@/utils/calculations";
+import { arabicIncludes } from "@/utils/arabicSearch";
+import { getDuplicateNameCounts, getDuplicateCountFor } from "@/utils/studentNames";
 import logo from "@/assets/logo.png";
 import { getTableFilters, setTableFilters } from "@/utils/storage";
+import { PRINT_FONT_BODY, PRINT_FONT_FACES } from "@/utils/paper-fonts";
 
 interface DirtyData {
   name: string;
@@ -18,6 +26,8 @@ interface Props {
   students: Student[];
   currentYear: string;
   competitionLabel?: string;
+  onDelete: (id: number) => void;
+  dirtyMap: Record<number, DirtyData>;
   onDirtyChange: (studentId: number, data: DirtyData) => void;
 }
 
@@ -25,14 +35,18 @@ export const CompetitionTable = ({
   students,
   currentYear,
   competitionLabel = "المسابقة الرمضانية",
+  onDelete,
+  dirtyMap,
   onDirtyChange,
 }: Props) => {
   const STORAGE_KEY = "competitionTable.filters";
   type Persisted = {
+    selectedTeacher: string;
     nameFilter: string;
     statusFilter: string;
     gradeFilter: string;
     partsFilter: string;
+    cumulativeHifzFilter: string;
     sortField: SortField | null;
     sortDirection: SortDirection;
     updatedAt?: number;
@@ -44,16 +58,25 @@ export const CompetitionTable = ({
       return {};
     }
   };
-  const saved = loadPersisted();
+  const [saved] = useState<Partial<Persisted>>(loadPersisted);
+  const [selectedTeacher, setSelectedTeacher] = useState<string>(saved.selectedTeacher ?? "all");
   const [nameFilter, setNameFilter] = useState<string>(saved.nameFilter ?? "");
   const [statusFilter, setStatusFilter] = useState<string>(saved.statusFilter ?? "all");
   const [gradeFilter, setGradeFilter] = useState<string>(saved.gradeFilter ?? "all");
   const [partsFilter, setPartsFilter] = useState<string>(saved.partsFilter ?? "");
+  const [cumulativeHifzFilter, setCumulativeHifzFilter] = useState<string>(
+    saved.cumulativeHifzFilter ?? "all",
+  );
   const [sortField, setSortField] = useState<SortField | null>(saved.sortField ?? null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(saved.sortDirection ?? null);
-  const [cloudLoaded, setCloudLoaded] = useState(false);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  /**
+   * الطلاب المشمولون بتوليد نماذج الاختبار: `null` = الحوار مغلق،
+   * طالب واحد من زر الصف، أو كل الطلاب المفلترين من زر رأس الكشف.
+   */
+  const [paperStudents, setPaperStudents] = useState<Student[] | null>(null);
 
-  // Pull filter settings from cloud once on mount
+  // قراءة نسخة المرشحات المحفوظة في قاعدة الجهاز مرة واحدة عند الفتح
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -61,40 +84,42 @@ export const CompetitionTable = ({
         const remote = (await getTableFilters<Partial<Persisted>>()) || {};
         const localUpdated = saved.updatedAt ?? 0;
         const remoteUpdated = remote.updatedAt ?? 0;
-        // Only override local state if cloud copy is strictly newer
+        // لا تستبدل مرشحات هذا المتصفح إلا بنسخة محفوظة أحدث.
         if (
           !cancelled &&
           remote &&
           Object.keys(remote).length > 0 &&
           remoteUpdated > localUpdated
         ) {
+          if (remote.selectedTeacher !== undefined) setSelectedTeacher(remote.selectedTeacher);
           if (remote.nameFilter !== undefined) setNameFilter(remote.nameFilter);
           if (remote.statusFilter !== undefined) setStatusFilter(remote.statusFilter);
           if (remote.gradeFilter !== undefined) setGradeFilter(remote.gradeFilter);
           if (remote.partsFilter !== undefined) setPartsFilter(remote.partsFilter);
+          if (remote.cumulativeHifzFilter !== undefined)
+            setCumulativeHifzFilter(remote.cumulativeHifzFilter);
           if (remote.sortField !== undefined) setSortField(remote.sortField);
           if (remote.sortDirection !== undefined) setSortDirection(remote.sortDirection);
         }
       } catch (e) {
         /* offline ok */
       } finally {
-        if (!cancelled) setCloudLoaded(true);
+        if (!cancelled) setSettingsLoaded(true);
       }
     })();
     return () => {
       cancelled = true;
     };
-    // يُنفَّذ مرة واحدة عند التركيب: يقارن نسخة السحابة بالقيمة المبدئية
-    // (saved.updatedAt) فقط، ويُعاد تشغيله عند كل تغيير سيتداخل مع المدخلات الحية.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [saved.updatedAt]);
 
   useEffect(() => {
     const data: Persisted = {
+      selectedTeacher,
       nameFilter,
       statusFilter,
       gradeFilter,
       partsFilter,
+      cumulativeHifzFilter,
       sortField,
       sortDirection,
       updatedAt: Date.now(),
@@ -104,20 +129,20 @@ export const CompetitionTable = ({
     } catch {
       /* ignore */
     }
-    if (!cloudLoaded) return;
-    // أوفلاين: الحفظ محلي دائماً
-    const pushToCloud = async () => {
+    if (!settingsLoaded) return;
+    // النسخة المحلية تحفظ المرشحات في MrkzyDatabase دائماً، بلا شرط اتصال.
+    const persistSettings = async () => {
       try {
         await setTableFilters(data);
       } catch {
         /* ignore */
       }
     };
-    const handle = setTimeout(pushToCloud, 800);
+    const handle = setTimeout(persistSettings, 800);
     // Flush immediately if user closes/hides the tab before debounce fires
     const flush = () => {
       clearTimeout(handle);
-      pushToCloud();
+      void persistSettings();
     };
     const onVis = () => {
       if (document.visibilityState === "hidden") flush();
@@ -129,15 +154,27 @@ export const CompetitionTable = ({
       window.removeEventListener("pagehide", flush);
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, [nameFilter, statusFilter, gradeFilter, partsFilter, sortField, sortDirection, cloudLoaded]);
+  }, [
+    selectedTeacher,
+    nameFilter,
+    statusFilter,
+    gradeFilter,
+    partsFilter,
+    cumulativeHifzFilter,
+    sortField,
+    sortDirection,
+    settingsLoaded,
+  ]);
 
   const savePersistedSettings = useCallback(
     (overrides: Partial<Persisted> = {}) => {
       const data: Persisted = {
+        selectedTeacher,
         nameFilter,
         statusFilter,
         gradeFilter,
         partsFilter,
+        cumulativeHifzFilter,
         sortField,
         sortDirection,
         updatedAt: Date.now(),
@@ -149,7 +186,16 @@ export const CompetitionTable = ({
         /* ignore */
       }
     },
-    [nameFilter, statusFilter, gradeFilter, partsFilter, sortField, sortDirection],
+    [
+      selectedTeacher,
+      nameFilter,
+      statusFilter,
+      gradeFilter,
+      partsFilter,
+      cumulativeHifzFilter,
+      sortField,
+      sortDirection,
+    ],
   );
 
   const handleSort = useCallback(
@@ -172,6 +218,14 @@ export const CompetitionTable = ({
     [sortField, sortDirection, savePersistedSettings],
   );
 
+  const teachers = useMemo(() => {
+    const uniqueTeachers = Array.from(new Set(students.map((s) => s.teacher).filter(Boolean)));
+    return uniqueTeachers.sort((a, b) => a.localeCompare(b, "ar"));
+  }, [students]);
+
+  // كشف الأسماء المكررة (بعد التطبيع) لتمييزها داخل الجدول
+  const duplicateNameCounts = useMemo(() => getDuplicateNameCounts(students), [students]);
+
   const currentYearNum = parseInt(currentYear);
 
   const getStudentSortValue = useCallback(
@@ -188,6 +242,8 @@ export const CompetitionTable = ({
       switch (field) {
         case "name":
           return student.name || "";
+        case "teacher":
+          return student.teacher || "";
         case "baseHifz":
           return baseHifz;
         case "parts":
@@ -231,7 +287,8 @@ export const CompetitionTable = ({
 
   const filteredStudents = useMemo(() => {
     const filtered = students.filter((student) => {
-      if (nameFilter && !student.name.includes(nameFilter)) return false;
+      if (selectedTeacher !== "all" && student.teacher !== selectedTeacher) return false;
+      if (nameFilter && !arabicIncludes(student.name, nameFilter)) return false;
 
       const parts = parseFloat(student.yearData?.parts || "0");
       const total = parseFloat(student.yearData?.total || "0");
@@ -253,6 +310,16 @@ export const CompetitionTable = ({
         if (parts < minParts) return false;
       }
 
+      if (cumulativeHifzFilter !== "all") {
+        const baseHifz = resolveBaseHifz(
+          student.hifzHistory || {},
+          currentYearNum,
+          student.yearData?.baseHifz,
+        );
+        const cumulativeParts = Math.min(baseHifz + parts, 30);
+        if (cumulativeParts !== Number(cumulativeHifzFilter)) return false;
+      }
+
       return true;
     });
 
@@ -271,31 +338,103 @@ export const CompetitionTable = ({
     return filtered;
   }, [
     students,
+    selectedTeacher,
     nameFilter,
     statusFilter,
     gradeFilter,
     partsFilter,
+    cumulativeHifzFilter,
+    currentYearNum,
     sortField,
     sortDirection,
     getStudentSortValue,
   ]);
 
+  /** استخدم أحدث تعديلات الجدول غير المحفوظة عند فتح مولّد النماذج. */
+  const applyPendingEdits = useCallback(
+    (student: Student): Student => {
+      const pending = dirtyMap[student.id];
+      if (!pending) return student;
+      return {
+        ...student,
+        name: pending.name,
+        hifzHistory: pending.history,
+        yearData: pending.yearData,
+      };
+    },
+    [dirtyMap],
+  );
+
+  /**
+   * مجموعة توليد نماذج الاختبار: تُفلتر بالحفظ **التراكمي** فقط
+   * (الحفظ السابق + الحفظ الجديد)، ولا يستبعد منها أحد بسبب الحفظ الجديد
+   * أو الحالة أو التقدير — لأن فئة النموذج تُشتق من التراكمي وحده.
+   */
+  const paperFilteredStudents = useMemo(
+    () =>
+      students.filter((student) => {
+        if (selectedTeacher !== "all" && student.teacher !== selectedTeacher) return false;
+        if (nameFilter && !arabicIncludes(student.name, nameFilter)) return false;
+
+        if (cumulativeHifzFilter !== "all") {
+          const baseHifz = resolveBaseHifz(
+            student.hifzHistory || {},
+            currentYearNum,
+            student.yearData?.baseHifz,
+          );
+          const parts = parseFloat(student.yearData?.parts || "0") || 0;
+          const cumulative = Math.min(baseHifz + parts, 30);
+          if (cumulative !== Number(cumulativeHifzFilter)) return false;
+        }
+
+        return true;
+      }),
+    [students, selectedTeacher, nameFilter, cumulativeHifzFilter, currentYearNum],
+  );
+
+  /**
+   * الطلاب كما سيُطبعون: تُثبَّت فيهم قيمة «الحفظ السابق» المحسوبة من سجل
+   * الأعوام (لا القيمة المخزّنة وحدها) ليطابق ما في الكشف.
+   */
+  const filteredPaperStudents = useMemo(
+    () =>
+      paperFilteredStudents.map((student) => {
+        const withEdits = applyPendingEdits(student);
+        const baseHifz = resolveBaseHifz(
+          withEdits.hifzHistory || {},
+          currentYearNum,
+          withEdits.yearData?.baseHifz,
+        );
+        if (!withEdits.yearData) return withEdits;
+        return {
+          ...withEdits,
+          yearData: { ...withEdits.yearData, baseHifz: String(baseHifz) },
+        };
+      }),
+    [paperFilteredStudents, applyPendingEdits, currentYearNum],
+  );
+
   const hasFilters =
-    nameFilter !== "" || statusFilter !== "all" || gradeFilter !== "all" || partsFilter !== "";
+    selectedTeacher !== "all" ||
+    nameFilter !== "" ||
+    statusFilter !== "all" ||
+    gradeFilter !== "all" ||
+    partsFilter !== "" ||
+    cumulativeHifzFilter !== "all";
 
   const getFilterDescription = () => {
     const parts: string[] = [];
+    if (selectedTeacher !== "all") parts.push(`المعلم/ة: ${selectedTeacher}`);
     if (statusFilter !== "all")
       parts.push(`الحالة: ${statusFilter === "active" ? "نشط" : "منقطع"}`);
     if (gradeFilter !== "all") parts.push(`التقدير: ${gradeFilter}`);
     if (partsFilter) parts.push(`الحفظ الجديد ≥ ${partsFilter}`);
+    if (cumulativeHifzFilter !== "all") parts.push(`الحفظ التراكمي: ${cumulativeHifzFilter} جزء`);
     if (nameFilter) parts.push(`الاسم: ${nameFilter}`);
     return parts.join(" | ");
   };
 
   const handlePrintFiltered = async () => {
-    const { printHtmlDocument } = await import("@/utils/nativePrint");
-
     const rows = filteredStudents
       .map((s, i) => {
         const parts = parseFloat(s.yearData?.parts || "0");
@@ -307,13 +446,14 @@ export const CompetitionTable = ({
 
         return `<tr>
         <td>${i + 1}</td>
-        <td>${s.name}</td>
-        <td>${s.yearData?.baseHifz || "-"}</td>
-        <td>${s.yearData?.parts || "-"}</td>
-        <td>${s.yearData?.totalHifz || "-"}</td>
-        <td>${s.yearData?.annual || "-"}</td>
-        <td>${s.yearData?.recitation || "-"}</td>
-        <td>${s.yearData?.memorization || "-"}</td>
+        <td>${esc(s.name)}</td>
+        <td>${esc(s.teacher)}</td>
+        <td>${esc(String(s.yearData?.baseHifz || "-"))}</td>
+        <td>${esc(String(s.yearData?.parts || "-"))}</td>
+        <td>${esc(String(s.yearData?.totalHifz || "-"))}</td>
+        <td>${esc(String(s.yearData?.annual || "-"))}</td>
+        <td>${esc(String(s.yearData?.recitation || "-"))}</td>
+        <td>${esc(String(s.yearData?.memorization || "-"))}</td>
         <td>${totalScore || "-"}</td>
         <td class="${isActive ? "active" : "inactive"}">${isActive ? "نشط" : "منقطع"}</td>
         <td>${grade || "-"}</td>
@@ -335,8 +475,9 @@ export const CompetitionTable = ({
     const fullHtml = `
       <html dir="rtl"><head><title>تقرير مصفى - ${currentYear}هـ</title>
       <style>
+      ${PRINT_FONT_FACES}
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; padding: 20px; color: #1a3a2a; }
+        body{font-family:${PRINT_FONT_BODY}; padding: 20px; color: #1a3a2a; }
         .header { text-align: center; margin-bottom: 20px; border-bottom: 3px solid #2d7a52; padding-bottom: 12px; }
         .header img { height: 80px; margin-bottom: 8px; }
         .header h1 { font-size: 20px; color: #2d7a52; }
@@ -360,18 +501,18 @@ export const CompetitionTable = ({
           <h1>مركز إنماء الأهلي الخيري</h1>
           <h2>كشف ${competitionLabel} - ${currentYear}هـ</h2>
         </div>
-        <div class="filter-info"><strong>التصفية:</strong> ${getFilterDescription()}</div>
-        <div class="count">عدد الطلاب والطالبات: <strong>${filteredStudents.length}</strong></div>
+        <div class="filter-info"><strong>التصفية:</strong> ${esc(String(getFilterDescription()))}</div>
+        <div class="count">عدد الطلاب: <strong>${filteredStudents.length}</strong></div>
         <table>
           <thead><tr>
-            <th>م</th><th>الاسم</th><th>الحفظ السابق</th><th>حفظ جديد</th>
+            <th>م</th><th>الاسم</th><th>المعلم/ة</th><th>الحفظ السابق</th><th>حفظ جديد</th>
             <th>الإجمالي</th><th>سنة</th><th>تلاوة</th><th>حفظ</th><th>المجموع</th>
             <th>الحالة</th><th>التقدير</th><th>المكافأة</th><th>المكافأة حسب الحالة</th>
           </tr></thead>
           <tbody>
             ${rows}
             <tr class="total-row">
-              <td colspan="11">إجمالي المكافآت</td>
+              <td colspan="12">إجمالي المكافآت</td>
               <td>${totalPrize.toLocaleString()}</td>
               <td>${totalStatusPrize.toLocaleString()}</td>
             </tr>
@@ -383,38 +524,12 @@ export const CompetitionTable = ({
     printHtmlDocument(fullHtml, `تقرير_${competitionLabel}_${currentYear}`);
   };
 
-  const filteredStats = useMemo(() => {
-    let totalParts = 0;
-    let totalScores = 0;
-    let scoredCount = 0;
-    let totalPrize = 0;
-    let khatimCount = 0;
-
-    for (const s of filteredStudents) {
-      const p = parseFloat(s.yearData?.parts || "0") || 0;
-      const th = parseFloat(s.yearData?.totalHifz || "0") || 0;
-      const tot = parseFloat(s.yearData?.total || "0") || 0;
-      const prz = parseFloat(s.yearData?.prize || "0") || 0;
-      totalParts += p;
-      totalPrize += prz;
-      if (tot > 0) {
-        totalScores += tot;
-        scoredCount++;
-      }
-      if (th >= 30 || p >= 30) khatimCount++;
-    }
-
-    return {
-      totalParts: Math.round(totalParts * 100) / 100,
-      avgScore: scoredCount > 0 ? (totalScores / scoredCount).toFixed(1) : "0",
-      totalPrize: Math.round(totalPrize),
-      khatimCount,
-    };
-  }, [filteredStudents]);
-
   return (
-    <div className="space-y-4">
+    <div className="space-y-3.5">
       <TableFilters
+        teachers={teachers}
+        selectedTeacher={selectedTeacher}
+        onTeacherChange={setSelectedTeacher}
         nameFilter={nameFilter}
         onNameFilterChange={setNameFilter}
         statusFilter={statusFilter}
@@ -423,34 +538,45 @@ export const CompetitionTable = ({
         onGradeFilterChange={setGradeFilter}
         partsFilter={partsFilter}
         onPartsFilterChange={setPartsFilter}
+        cumulativeHifzFilter={cumulativeHifzFilter}
+        onCumulativeHifzFilterChange={setCumulativeHifzFilter}
         onPrintFiltered={handlePrintFiltered}
         hasFilters={hasFilters}
       />
 
-      <div className="relative overflow-hidden rounded-[1.75rem] border border-white/80 bg-card/95 shadow-2xl shadow-primary/10 backdrop-blur">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 bg-gradient-to-l from-primary/[0.08] via-emerald-500/[0.04] to-transparent px-4 py-3 print:hidden">
-          <div>
-            <h3 className="font-black text-foreground">
-              كشف الطلاب والطالبات — عام {currentYear}هـ
-            </h3>
-            <p className="text-xs text-muted-foreground">
-              انقر على رأس العمود للفرز · اسحب يمين/يسار لرؤية جميع الأعمدة
-            </p>
+      <div className="relative overflow-hidden rounded-2xl border border-border/30 bg-card/90 shadow-sm backdrop-blur">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/30 bg-muted/20 px-3 py-2.5 print:hidden">
+          <div className="flex items-center gap-2">
+            <span className="hidden h-6 w-6 items-center justify-center rounded-full bg-primary/[0.07] ring-1 ring-primary/10 sm:flex">
+              <Wand2 className="h-3 w-3 text-primary/70" />
+            </span>
+            <div>
+              <h3 className="text-[12px] font-bold tracking-tight text-foreground">كشف الطلاب</h3>
+              <p className="text-[10px] text-muted-foreground/70">
+                اسحب يمين/يسار لرؤية كل الأعمدة على الجوال
+              </p>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-amber-500/12 px-2.5 py-1 text-xs font-bold text-amber-800 ring-1 ring-amber-500/20">
-              مجموع الأجزاء: {filteredStats.totalParts}
-            </span>
-            <span className="rounded-full bg-emerald-500/12 px-2.5 py-1 text-xs font-bold text-emerald-800 ring-1 ring-emerald-500/20">
-              متوسط الدرجات: {filteredStats.avgScore}
-            </span>
-            <span className="rounded-full bg-primary/12 px-3 py-1 text-xs font-extrabold text-primary ring-1 ring-primary/20">
-              {filteredStudents.length} طالب/طالبة
-            </span>
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPaperStudents(filteredPaperStudents)}
+              disabled={filteredPaperStudents.length === 0}
+              title="توليد نموذج اختبار لكل طالب/ة — الفلترة بالحفظ التراكمي فقط"
+              className="h-7 gap-1 rounded-full border-primary/20 bg-background/70 px-2.5 text-[11px] font-medium text-primary hover:bg-primary/[0.06] hover:text-primary shadow-sm"
+            >
+              <Wand2 className="h-3 w-3" />
+              نماذج الاختبار
+            </Button>
+            <div className="inline-flex items-center gap-1 rounded-full bg-primary/[0.07] px-2.5 py-1 text-[11px] font-medium tabular-nums text-primary ring-1 ring-primary/10">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary/60" />
+              {filteredStudents.length} طالب/ة
+            </div>
           </div>
         </div>
         <div className="table-scroll max-h-[60vh] overflow-auto md:max-h-[72vh]">
-          <table className="w-full min-w-[1230px] table-fixed border-separate border-spacing-0 bg-card text-sm whitespace-nowrap">
+          <table className="w-full min-w-[1560px] table-fixed border-separate border-spacing-0 bg-card text-sm whitespace-nowrap">
             <TableHeader
               currentYear={currentYear}
               sortField={sortField}
@@ -464,56 +590,13 @@ export const CompetitionTable = ({
                   student={student}
                   index={index + 1}
                   currentYear={currentYear}
+                  onDelete={onDelete}
                   onDirtyChange={onDirtyChange}
+                  duplicateNameCount={getDuplicateCountFor(student.name, duplicateNameCounts)}
+                  onGeneratePaper={(target) => setPaperStudents([applyPendingEdits(target)])}
                 />
               ))}
             </tbody>
-            {filteredStudents.length > 0 && (
-              <tfoot className="sticky bottom-0 z-10 bg-gradient-to-l from-secondary via-secondary/95 to-background font-bold text-foreground shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
-                <tr>
-                  <td
-                    colSpan={3}
-                    className="border-t-2 border-l border-primary/30 px-4 py-2.5 text-right text-xs"
-                  >
-                    إجمالي الكشف المعروض:{" "}
-                    <span className="font-black text-primary">{filteredStudents.length}</span>{" "}
-                    طالب/طالبة
-                  </td>
-                  <td className="border-t-2 border-l border-primary/30 px-2 py-2.5 text-center text-xs font-black text-amber-800">
-                    {filteredStats.totalParts} جزء
-                  </td>
-                  <td className="border-t-2 border-l border-primary/30 px-2 py-2.5 text-center text-xs font-black text-amber-800">
-                    خاتمون: {filteredStats.khatimCount}
-                  </td>
-                  <td
-                    colSpan={4}
-                    className="border-t-2 border-l border-primary/30 px-2 py-2.5 text-center text-xs font-black text-emerald-800"
-                  >
-                    متوسط المجموع: {filteredStats.avgScore}
-                  </td>
-                  <td className="border-t-2 border-l border-primary/30 px-2 py-2.5 text-center text-xs">
-                    —
-                  </td>
-                  <td className="border-t-2 border-l border-primary/30 px-2 py-2.5 text-center text-xs">
-                    —
-                  </td>
-                  <td className="border-t-2 border-l border-primary/30 px-2 py-2.5 text-center text-xs font-black text-primary">
-                    {filteredStats.totalPrize > 0
-                      ? filteredStats.totalPrize.toLocaleString("ar-EG")
-                      : "—"}
-                  </td>
-                  <td className="border-t-2 border-l border-primary/30 px-2 py-2.5 text-center text-xs">
-                    —
-                  </td>
-                  <td className="border-t-2 border-l border-primary/30 px-2 py-2.5 text-center text-xs">
-                    —
-                  </td>
-                  <td className="border-t-2 border-primary/30 px-2 py-2.5 text-center text-xs">
-                    —
-                  </td>
-                </tr>
-              </tfoot>
-            )}
           </table>
         </div>
       </div>
@@ -523,6 +606,16 @@ export const CompetitionTable = ({
           لا توجد بيانات تطابق معايير البحث
         </div>
       )}
+
+      <GenerateStudentPapersDialog
+        open={paperStudents !== null}
+        onOpenChange={(open) => {
+          if (!open) setPaperStudents(null);
+        }}
+        students={paperStudents ?? []}
+        currentYear={currentYear}
+        competitionLabel={competitionLabel}
+      />
     </div>
   );
 };

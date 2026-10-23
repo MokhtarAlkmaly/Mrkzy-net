@@ -37,6 +37,7 @@ import {
   UserCog,
   Eye,
   EyeOff,
+  BellRing,
 } from "lucide-react";
 import logo from "@/assets/logo.png";
 import { SidebarAccountFooter } from "@/components/SidebarAccountFooter";
@@ -57,6 +58,7 @@ const mainItems: NavItem[] = [
   { to: "/halaqat", label: "إدارة الحلقات", icon: UsersRound },
   { to: "/teachers", label: "المعلمين", icon: Users },
   { to: "/monthly", label: "المتابعة الشهرية", icon: Sparkles },
+  { to: "/alerts", label: "المتأخرات والتنبيهات", icon: BellRing },
   { to: "/teacher-links", label: "روابط المعلمين والمعلمات", icon: Link2 },
   { to: "/submissions", label: "وارد المعلمين والمعلمات", icon: Inbox },
   { to: "/ramadan-competition", label: "المسابقة الرمضانية", icon: Trophy },

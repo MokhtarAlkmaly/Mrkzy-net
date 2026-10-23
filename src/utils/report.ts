@@ -1,3 +1,6 @@
+import { printHtmlDocument } from "@/utils/nativePrint";
+import { PRINT_FONT_BODY, PRINT_FONT_FACES } from "@/utils/paper-fonts";
+
 export const esc = (s: string) =>
   (s || "").replace(
     /[&<>"']/g,
@@ -6,12 +9,13 @@ export const esc = (s: string) =>
 
 export const riyal = (n: number) => `${Number(n || 0).toLocaleString()} ريال`;
 
-export const printHtml = async (title: string, body: string, extraCss = "") => {
-  const { printHtmlDocument } = await import("@/utils/nativePrint");
-  const html = `<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8">
+/** يبني مستند طباعة كامل (نفس المستند الذي يُطبع أو يُحوَّل إلى PDF). */
+export const buildPrintDocument = (title: string, body: string, extraCss = ""): string =>
+  `<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8">
     <title>${esc(title)}</title>
     <style>
-      body{font-family:'Traditional Arabic','Tahoma',sans-serif;direction:rtl;padding:24px;color:#222}
+      ${PRINT_FONT_FACES}
+      body{font-family:${PRINT_FONT_BODY};direction:rtl;padding:24px;color:#222}
       h1{text-align:center;color:#0e6b3a;margin:0 0 4px}
       h2{color:#0e6b3a;border-bottom:2px solid #0e6b3a;padding-bottom:4px;margin-top:26px;font-size:18px}
       .sub{text-align:center;color:#666;margin-bottom:18px}
@@ -30,5 +34,19 @@ export const printHtml = async (title: string, body: string, extraCss = "") => {
       ${extraCss}
     </style></head><body>${body}
     </body></html>`;
-  printHtmlDocument(html, title);
-};
+
+/**
+ * يطبع تقريراً من HTML.
+ *
+ * ملاحظة: لا تسبق هذا الاستدعاء بـ `await` داخل معالج النقر (لا استيراد
+ * ديناميكي ولا جلب بيانات) حتى تُفتح نافذة الطباعة داخل نفس نقرة المستخدم؛
+ * وإلا حجبها مانع النوافذ المنبثقة في المتصفح.
+ */
+export const printHtml = (
+  title: string,
+  body: string,
+  extraCss = "",
+  pdfFormat?: string,
+  pdfOrientation?: string,
+): Promise<boolean> =>
+  printHtmlDocument(buildPrintDocument(title, body, extraCss), title, pdfFormat, pdfOrientation);

@@ -8,7 +8,20 @@ import {
 } from "@/types/student";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
-import { resolveBaseHifz } from "./calculations";
+import {
+  calculateTotalHifz,
+  carryTotalHifz,
+  propagateTotalHifz,
+  resolveBaseHifz,
+} from "./calculations";
+import {
+  emptyCenterProfile,
+  normalizeCenterProfile,
+  normalizeCenterProfileDraft,
+  type CenterProfile,
+  type CenterProfileDraft,
+  type CenterProfileInput,
+} from "@/lib/center-profile";
 import {
   cacheStudents,
   getCachedStudents,
@@ -732,6 +745,19 @@ export const loadAllStudentsAllYears = async (): Promise<StudentAllYears[]> => {
     .sort((a, b) => (a.name || "").localeCompare(b.name || "", "ar"));
 };
 
+/**
+ * صيغة السجل الشامل المستخدمة في أدوات الاستيراد والتنبيهات القادمة من
+ * المشروع المرجعي. تبقى القراءة من الكاش المحلي نفسه، مع آخر حفظ تراكمي.
+ */
+export const loadGlobalStudentsWithYears = async (): Promise<Student[]> => {
+  const students = await loadAllStudentsAllYears();
+  return students.map((student) => ({
+    ...student,
+    latest_total_hifz:
+      student.yearData?.totalHifz || student.initial_hifz || student.yearData?.baseHifz || "0",
+  }));
+};
+
 export interface TeacherYearAssignment {
   student_id: number;
   name: string;
@@ -1231,11 +1257,21 @@ export const loadHifzHistory = async (studentId: number): Promise<HifzHistory> =
 
 export const saveYearData = async (year: string, studentId: number, data: YearData) => {
   guardWrite();
+  const allRows = await getCachedYearData();
+  const targetRank = yearRank(year);
+  const previousRows = allRows
+    .filter((row) => row.student_id === studentId && yearRank(row.year) < targetRank)
+    .sort((a, b) => yearRank(a.year) - yearRank(b.year));
+  const previousTotal = previousRows.length
+    ? previousRows[previousRows.length - 1].total_hifz
+    : undefined;
+  const baseHifz = carryTotalHifz(previousTotal, data.baseHifz);
+  const totalHifz = calculateTotalHifz(baseHifz, data.parts);
   await putCachedYearData({
     student_id: studentId,
     year,
-    base_hifz: data.baseHifz,
-    total_hifz: data.totalHifz,
+    base_hifz: baseHifz.toString(),
+    total_hifz: totalHifz.toString(),
     parts: data.parts,
     annual: data.annual,
     recitation: data.recitation,
@@ -1248,6 +1284,21 @@ export const saveYearData = async (year: string, studentId: number, data: YearDa
     teacher: data.teacher || "",
   });
   await markDirty("year", "upsert", { student_id: studentId, year });
+
+  // عند تعديل عام سابق، يمتد الإجمالي التراكمي إلى الأعوام التالية الموجودة
+  // بدلاً من ترك حفظها السابق بقيمة قديمة.
+  const followingRows = allRows
+    .filter((row) => row.student_id === studentId && yearRank(row.year) > targetRank)
+    .sort((a, b) => yearRank(a.year) - yearRank(b.year));
+  const recalculatedRows = propagateTotalHifz(followingRows, totalHifz);
+  for (let index = 0; index < followingRows.length; index++) {
+    const row = followingRows[index];
+    const nextRow = recalculatedRows[index];
+    if (row.base_hifz !== nextRow.base_hifz || row.total_hifz !== nextRow.total_hifz) {
+      await putCachedYearData(nextRow);
+      await markDirty("year", "upsert", { student_id: studentId, year: row.year });
+    }
+  }
 };
 
 export const loadYearData = async (year: string, studentId: number): Promise<YearData> => {
@@ -1456,6 +1507,100 @@ export const saveStudentStatuses = async (statuses: string[]) => {
       .from("user_settings")
       .upsert({ user_id: userId, student_statuses: normalized }, { onConflict: "user_id" });
   }
+};
+
+// ===== التعريف بالمركز والأهداف العامة (محلي وقابل للنسخ الاحتياطي) =====
+const CENTER_PROFILE_SETTING = "center_profile";
+const CENTER_PROFILE_DRAFT_SETTING = "center_profile_draft";
+
+type CenterSettingField = typeof CENTER_PROFILE_SETTING | typeof CENTER_PROFILE_DRAFT_SETTING;
+type CenterSettingsInsert = Database["public"]["Tables"]["user_settings"]["Insert"];
+
+const readCenterSetting = async <T>(userId: string, field: CenterSettingField) => {
+  const { data, error } = await supabase
+    .from("user_settings")
+    .select(field)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error || !data) return undefined;
+  return (data as unknown as Record<string, unknown>)[field] as T | undefined;
+};
+
+const writeCenterSetting = async (
+  userId: string,
+  field: CenterSettingField,
+  value: unknown,
+): Promise<void> => {
+  const payload = { user_id: userId, [field]: value as Json } as CenterSettingsInsert;
+  const { error } = await supabase.from("user_settings").upsert(payload, { onConflict: "user_id" });
+  if (error) throw error;
+};
+
+export type SaveCenterProfileResult = {
+  profile: CenterProfile;
+  /** لا توجد مزامنة سحابية في هذه النسخة؛ الحفظ في مجلد الجهاز فقط. */
+  synced: boolean;
+};
+
+export const loadCenterProfile = async (): Promise<CenterProfile> => {
+  await ensureCache();
+  const cached = await getCachedSetting<unknown>(CENTER_PROFILE_SETTING);
+  if (cached !== undefined) return normalizeCenterProfile(cached);
+
+  const userId = await getUserId();
+  if (userId) {
+    const stored = await readCenterSetting<unknown>(userId, CENTER_PROFILE_SETTING);
+    if (stored !== undefined && stored !== null) {
+      const profile = normalizeCenterProfile(stored);
+      await setCachedSetting(CENTER_PROFILE_SETTING, profile);
+      return profile;
+    }
+  }
+  return emptyCenterProfile();
+};
+
+export const saveCenterProfile = async (
+  input: CenterProfileInput,
+): Promise<SaveCenterProfileResult> => {
+  guardWrite();
+  const profile = normalizeCenterProfile({
+    intro: input.intro,
+    objectives: input.objectives,
+    pinned_at: new Date().toISOString(),
+  });
+  await setCachedSetting(CENTER_PROFILE_SETTING, profile);
+  const userId = await getUserId();
+  if (userId) await writeCenterSetting(userId, CENTER_PROFILE_SETTING, profile);
+  return { profile, synced: false };
+};
+
+export const loadCenterProfileDraft = async (): Promise<CenterProfileDraft | null> => {
+  await ensureCache();
+  const cached = await getCachedSetting<unknown>(CENTER_PROFILE_DRAFT_SETTING);
+  if (cached !== undefined) return normalizeCenterProfileDraft(cached);
+
+  const userId = await getUserId();
+  if (!userId) return null;
+  const stored = await readCenterSetting<unknown>(userId, CENTER_PROFILE_DRAFT_SETTING);
+  const draft = normalizeCenterProfileDraft(stored);
+  if (draft) await setCachedSetting(CENTER_PROFILE_DRAFT_SETTING, draft);
+  return draft;
+};
+
+export const saveCenterProfileDraft = async (draft: CenterProfileDraft) => {
+  if (isViewingOtherUser()) return;
+  await ensureCache();
+  await setCachedSetting(CENTER_PROFILE_DRAFT_SETTING, draft);
+  const userId = await getUserId();
+  if (userId) await writeCenterSetting(userId, CENTER_PROFILE_DRAFT_SETTING, draft);
+};
+
+export const clearCenterProfileDraft = async () => {
+  if (isViewingOtherUser()) return;
+  await ensureCache();
+  await setCachedSetting(CENTER_PROFILE_DRAFT_SETTING, null);
+  const userId = await getUserId();
+  if (userId) await writeCenterSetting(userId, CENTER_PROFILE_DRAFT_SETTING, null);
 };
 
 export const migrateYearData = async (newYear: string, students: { id: number }[]) => {
@@ -1816,7 +1961,7 @@ export const saveMediaMetadata = async (
     month: number;
     title: string;
     file_path: string;
-    file_type: "image" | "video";
+    file_type: "image" | "video" | "document";
     file_size: number;
   },
 ): Promise<MediaMetadataRow | null> => {
